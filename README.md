@@ -4,6 +4,40 @@ FastAPI storage for [herbant](https://github.com/ancqit/herbant). Files go to a 
 
 Render boots this with the Dockerfile. `GET /health` is the health check.
 
+## MongoDB
+
+The client matches junctionBack `app/database.py`: `MongoClient` on `MONGODB_URL`, pool 5–100, `retryWrites=True`. The database name is `MONGODB_DATABASE`. It defaults to `herb`, so the same Atlas cluster can keep Junction's `junction` database next to this one.
+
+Put this in `.env` and in Render. Paste your cluster URL over the host. Replace the password. If the password contains `@`, `:`, `/`, `#`, or `?`, encode those characters (`%40`, `%3A`, `%2F`, `%23`, `%3F`) or the host will be read wrong.
+
+```bash
+MONGODB_URL=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@YOUR_CLUSTER.mongodb.net/?retryWrites=true&w=majority&appName=herback
+MONGODB_DATABASE=herb
+```
+
+Atlas side, once:
+
+1. Database Access: a user that can read and write the `herb` database. That username and password go in the URL.
+2. Network Access: allow this service to reach the cluster. A Render web service has no fixed outbound address, so the entry that works is `0.0.0.0/0`.
+3. Connect → Drivers → Python, and copy the `mongodb+srv` string into `MONGODB_URL`.
+
+`GET /health` stays up even when the URL is empty, and it reports `mongo_configured` plus `mongo_host` (the cluster host only). `GET /mongo` runs a ping and returns `{"ok":true,"database":"herb","host":"..."}`. A failed ping is 503 and the body does not include the URL.
+
+## Scrap
+
+herback is the holder for the scrap portal. The portal calls `/api/scrap/...` and Vercel strips `/api`, so these routes are mounted at `/scrap` and `/api/scrap`.
+
+| Route | What it does |
+| --- | --- |
+| `POST /scrap/login` | `2001` returns `{ role: "slave" }`. `UPLOAD_TOKEN` returns `{ role: "admin" }`. |
+| `POST /scrap/get-upload-url` | Admin. Presigned PUT under `2001/`. |
+| `GET /scrap/scraps` | Card list from `2001/catalog.json`. |
+| `POST /scrap/scraps` | Admin. Saves a card into that catalog. |
+| `DELETE /scrap/scraps/{id}` | Admin. Removes the card and its objects. |
+| `GET /scrap/types` | `bikes` plus types already stored. |
+
+Set `UPLOAD_TOKEN` next to the `R2_*` variables. Scrap keys cannot land in `herb/` or `shorts/`.
+
 ## Cloudflare R2
 
 1. In the Cloudflare dashboard open **R2 → Create bucket**. Name it `herb-media` (or another name you will paste into `R2_BUCKET`). Pick a location close to the centre if Cloudflare asks. This name is not the public hostname.
@@ -50,7 +84,7 @@ openssl rand -hex 32
 4. Deploy. Open `https://<your-service>.onrender.com/health`. You want:
 
 ```json
-{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true}
+{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
 ```
 
 `r2_missing` lists variable **names** only. A missing name means that slot is empty in Render. Edit the env var and redeploy if the start command already captured the old environment. Render injects env at boot.
@@ -67,6 +101,9 @@ openssl rand -hex 32
 | `R2_BUCKET` | same | Bucket name |
 | `R2_PUBLIC_BASE_URL` | same | Safe to be public. herbant will need it to render images |
 | `HERB_API_KEY` | Render env | Required on `X-Herb-Key` or `Authorization: Bearer` |
+| `UPLOAD_TOKEN` | Render env, local `.env` | Scrap desk login. `2001` stays the read-only login |
+| `MONGODB_URL` | Render env, local `.env` | Contains the database username and password |
+| `MONGODB_DATABASE` | same | `herb` unless you choose another name on this cluster |
 | `.env` | your machine only | `.gitignore` already excludes it |
 
 `HERB_API_KEY` stops strangers from minting upload URLs. If the Angular app later ships that key in the browser bundle, anyone who loads the site can read it. That is a gate for a private room, not a user login. When herbant calls this API, prefer keeping the key on a server you control, or replace this check with a real session. Do not put the R2 secret in herbant. The browser only ever sees a presigned URL that expires (default 10 minutes) and can write one object key.
@@ -98,4 +135,4 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-`GET http://127.0.0.1:8000/health` and `GET http://127.0.0.1:8000/docs`.
+`GET http://127.0.0.1:8000/health`, `GET http://127.0.0.1:8000/mongo`, and `GET http://127.0.0.1:8000/docs`.

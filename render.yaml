@@ -21,6 +21,12 @@ services:
         sync: false
       - key: HERB_API_KEY
         sync: false
+      - key: UPLOAD_TOKEN
+        sync: false
+      - key: MONGODB_URL
+        sync: false
+      - key: MONGODB_DATABASE
+        value: herb
       - key: CORS_ORIGINS
         sync: false
       - key: OPENAPI_ENABLED

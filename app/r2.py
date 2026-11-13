@@ -270,6 +270,48 @@ def put_bytes(object_key: str, body: bytes, *, content_type: str) -> None:
 def delete_object(object_key: str) -> None:
     settings = require_r2()
     key = assert_owned_key(object_key)
+    delete_key(key)
+
+
+def read_object(key: str) -> bytes | None:
+    """Read a bucket key. A missing object is None. Used by the scrap catalog."""
+    settings = require_r2()
+    try:
+        response = client_for(settings).get_object(Bucket=settings.bucket, Key=key)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if http_status == 404 or code in {"NoSuchKey", "404", "NotFound"}:
+            return None
+        _raise_storage_error(exc)
+    return response["Body"].read()
+
+
+def write_object(key: str, body: bytes, *, content_type: str, cache_control: str | None = None) -> None:
+    settings = require_r2()
+    try:
+        client_for(settings).put_object(
+            Bucket=settings.bucket,
+            Key=key,
+            Body=body,
+            ContentType=content_type,
+            CacheControl=cache_control or settings.cache_control,
+        )
+    except (BotoCoreError, ClientError) as exc:
+        _raise_storage_error(exc)
+
+
+def presign_put_key(key: str, content_type: str) -> str:
+    settings = require_r2()
+    return client_for(settings).generate_presigned_url(
+        "put_object",
+        Params={"Bucket": settings.bucket, "Key": key, "ContentType": content_type},
+        ExpiresIn=settings.sign_expires_seconds,
+    )
+
+
+def delete_key(key: str) -> None:
+    settings = require_r2()
     try:
         client_for(settings).delete_object(Bucket=settings.bucket, Key=key)
     except (BotoCoreError, ClientError) as exc:

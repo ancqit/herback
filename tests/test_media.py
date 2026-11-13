@@ -13,6 +13,8 @@ ENV_NAMES = (
     "R2_SIGN_EXPIRES_SECONDS",
     "HERB_API_KEY",
     "CORS_ORIGINS",
+    "MONGODB_URL",
+    "MONGODB_DATABASE",
 )
 
 
@@ -23,8 +25,12 @@ def clear_storage_env(monkeypatch: pytest.MonkeyPatch):
     from app import r2
 
     r2._client.cache_clear()
+    from app import database
+
+    database._client.cache_clear()
     yield
     r2._client.cache_clear()
+    database._client.cache_clear()
 
 
 def _configure(monkeypatch: pytest.MonkeyPatch, **extra: str) -> None:
@@ -47,6 +53,9 @@ def test_health_lists_missing_names():
     assert "R2_ACCESS_KEY_ID" in body["r2_missing"]
     assert "R2_SECRET_ACCESS_KEY" in body["r2_missing"]
     assert body["api_key_configured"] is False
+    assert body["mongo_configured"] is False
+    assert body["mongo_missing"] == ["MONGODB_URL"]
+    assert body["mongo_host"] == ""
     assert all(isinstance(name, str) and name.isupper() for name in body["r2_missing"])
 
 
