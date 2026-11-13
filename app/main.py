@@ -1,12 +1,13 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 from .cors_config import load_cors_origin_regex, load_cors_origins
+from .database import load_settings, mongo_configured, mongo_host, mongo_missing_env, ping
 from .media import router as media_router
 from .r2 import r2_configured, r2_missing_env
 
@@ -14,7 +15,7 @@ _openapi_enabled = os.getenv("OPENAPI_ENABLED", "true").lower() in {"1", "true",
 
 app = FastAPI(
     title="Herback",
-    description="Storage API for herbant. Presigned uploads go to Cloudflare R2.",
+    description="Storage API for herbant. Presigned uploads go to Cloudflare R2. MongoDB uses the same client settings as junctionBack.",
     version="0.1.0",
     docs_url="/docs" if _openapi_enabled else None,
     redoc_url=None,
@@ -42,4 +43,26 @@ def health() -> dict[str, str | bool | list[str]]:
         "r2_configured": r2_configured(),
         "r2_missing": r2_missing_env(),
         "api_key_configured": bool((os.getenv("HERB_API_KEY") or "").strip()),
+        "mongo_configured": mongo_configured(),
+        "mongo_missing": mongo_missing_env(),
+        "mongo_host": mongo_host(),
     }
+
+
+@app.get("/mongo")
+def mongo_check() -> dict[str, str | bool]:
+    """Confirm the cluster URL. Does not return the connection string."""
+    if not mongo_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MONGODB_URL is not set",
+        )
+    try:
+        ping()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB ping failed",
+        ) from exc
+    settings = load_settings()
+    return {"ok": True, "database": settings.database, "host": mongo_host()}
