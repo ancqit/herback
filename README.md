@@ -23,6 +23,12 @@ Atlas side, once:
 
 `GET /health` stays up even when the URL is empty, and it reports `mongo_configured` plus `mongo_host` (the cluster host only). `GET /mongo` runs a ping and returns `{"ok":true,"database":"herb","host":"..."}`. A failed ping is 503 and the body does not include the URL.
 
+## Room snapshots
+
+herbant keeps one picture in memory so moving through the room stays quick. `POST /api/room` stores that picture in `room_snapshots`. `GET /api/room?room=herbalife` returns the newest one. `GET /api/schedules?room=herbalife` reads the schedule days out of that same picture, so a dump does not drop a schedule.
+
+The browser deletes its local copy about 30 seconds after a dump succeeds. Mongo keeps the newest 24 dumps for the room and deletes the older ones.
+
 ## Scrap
 
 herback is the holder for the scrap portal. The portal calls `/api/scrap/...` and Vercel strips `/api`, so these routes are mounted at `/scrap` and `/api/scrap`.
