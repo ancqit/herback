@@ -23,6 +23,21 @@ Atlas side, once:
 
 `GET /health` stays up even when the URL is empty, and it reports `mongo_configured` plus `mongo_host` (the cluster host only). `GET /mongo` runs a ping and returns `{"ok":true,"database":"herb","host":"..."}`. A failed ping is 503 and the body does not include the URL.
 
+## Scrap
+
+herback is the holder for the scrap portal. The portal calls `/api/scrap/...` and Vercel strips `/api`, so these routes are mounted at `/scrap` and `/api/scrap`.
+
+| Route | What it does |
+| --- | --- |
+| `POST /scrap/login` | `2001` returns `{ role: "slave" }`. `UPLOAD_TOKEN` returns `{ role: "admin" }`. |
+| `POST /scrap/get-upload-url` | Admin. Presigned PUT under `2001/`. |
+| `GET /scrap/scraps` | Card list from `2001/catalog.json`. |
+| `POST /scrap/scraps` | Admin. Saves a card into that catalog. |
+| `DELETE /scrap/scraps/{id}` | Admin. Removes the card and its objects. |
+| `GET /scrap/types` | `bikes` plus types already stored. |
+
+Set `UPLOAD_TOKEN` next to the `R2_*` variables. Scrap keys cannot land in `herb/` or `shorts/`.
+
 ## Cloudflare R2
 
 1. In the Cloudflare dashboard open **R2 → Create bucket**. Name it `herb-media` (or another name you will paste into `R2_BUCKET`). Pick a location close to the centre if Cloudflare asks. This name is not the public hostname.
@@ -86,6 +101,7 @@ openssl rand -hex 32
 | `R2_BUCKET` | same | Bucket name |
 | `R2_PUBLIC_BASE_URL` | same | Safe to be public. herbant will need it to render images |
 | `HERB_API_KEY` | Render env | Required on `X-Herb-Key` or `Authorization: Bearer` |
+| `UPLOAD_TOKEN` | Render env, local `.env` | Scrap desk login. `2001` stays the read-only login |
 | `MONGODB_URL` | Render env, local `.env` | Contains the database username and password |
 | `MONGODB_DATABASE` | same | `herb` unless you choose another name on this cluster |
 | `.env` | your machine only | `.gitignore` already excludes it |
