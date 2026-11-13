@@ -44,6 +44,54 @@ herback is the holder for the scrap portal. The portal calls `/api/scrap/...` an
 
 Set `UPLOAD_TOKEN` next to the `R2_*` variables. Scrap keys cannot land in `herb/` or `shorts/`.
 
+## Binter
+
+herback is the holder for the Sunskriti metals-and-glass collect portal. The portal calls `/api/binter/...` and Vercel strips `/api`, so these routes are mounted at `/binter` and `/api/binter`, the same way as scrap.
+
+Three numbers are set on this service, beside `HERB_API_KEY` and `UPLOAD_TOKEN`. The operator fills them on Render. A blank value keeps that door shut. There is no default password.
+
+| Number | Role |
+| --- | --- |
+| `BINTER_NOTIFIER_TOKEN` | The person who raises a collect. |
+| `BINTER_RECEIVER_TOKEN` | The vehicle that accepts and completes it. |
+| `BINTER_ADMIN_TOKEN` | The weekly and monthly sheet. |
+
+Send the number as `Authorization: Bearer <token>`. The receiver also sends `X-Binter-Vehicle` on the profile, the accept, the complete, and the receiver's list.
+
+The three buckets are ferrous metal (steel, iron, and other magnetic scrap), non-ferrous metal (aluminium, copper, brass, and other metal that is not magnetic), and glass (bottles, jars, and broken glass). Location types are indoor, yard, and gate. There is no map. Each collect gets a number like `C1842`.
+
+The notifier sends a place label, a bucket, a photograph, and an optional clip. The receiver registers a name, a vehicle number, and three papers: aadhaar, driving licence, and vehicle RC. After save, the profile says only whether each paper is on file and its filename. It does not return the document object key or a URL. Trash photos and clips do return a public URL so the vehicle can see the bucket.
+
+Accepting a collect stores the receiver's name and vehicle number. That is when the notifier's Received lamp lights. Only that vehicle can mark the collect done. A second accept is refused. The receiver's list shows open collects plus ones that vehicle accepted which are not done. The notifier and the admin still see done collects.
+
+Thirty days after `created_at`, herback deletes the photo and clip objects and drops the request. Profile documents stay. The sweep runs on every read and write of `binter/state.json`.
+
+Keys stay under `binter/`. The server chooses them. Nothing lands in `herb/`, `2001/`, or `shorts/`.
+
+| Object | Key |
+| --- | --- |
+| State | `binter/state.json` |
+| Photograph | `binter/photos/<32 hex>.jpg`, `.png`, or `.webp` (8 MB) |
+| Clip | `binter/clips/<32 hex>.mp4`, `.webm`, or `.mov` (20 MB, `max_seconds` 10) |
+| Papers | `binter/documents/<aadhaar|licence|rc>/<32 hex>.jpg`, `.png`, `.webp`, or `.pdf` (8 MB) |
+
+| Route | What it does |
+| --- | --- |
+| `POST /binter/login` | Body `{ token }`. Returns `{ ok, role }` for notifier, receiver, or admin. |
+| `GET /binter/meta` | Program name, the three buckets, and the location types. |
+| `POST /binter/upload-url` | Presigned PUT. Photographs and clips for the notifier. Papers for the receiver. |
+| `GET /binter/profile` | Receiver, with `X-Binter-Vehicle`. |
+| `POST /binter/profile` | Receiver saves the name, vehicle, and papers. |
+| `GET /binter/requests` | Notifier and admin see every unexpired collect. The receiver sees open collects and the ones that vehicle accepted which are not done. |
+| `POST /binter/requests` | Notifier raises a collect. |
+| `POST /binter/requests/{id}/accept` | Receiver with papers on file. |
+| `POST /binter/requests/{id}/complete` | The accepting vehicle only. |
+| `GET /binter/gist` | Admin counts for the collects still inside 30 days. |
+| `GET /binter/sheet?span=week` | Admin rows whose `created_at` is in the current week. Week starts Monday 00:00, Asia/Kolkata. |
+| `GET /binter/sheet?span=month` | Admin rows for the current month. The month starts on the 1st at 00:00, Asia/Kolkata. |
+
+The R2 bucket CORS policy must allow the binter Vercel origin to PUT from the browser, the same way it allows herbant. Include `https://binter.vercel.app` and `http://localhost:5173`. Without that, `POST /binter/upload-url` succeeds and the browser PUT fails.
+
 ## Cloudflare R2
 
 1. In the Cloudflare dashboard open **R2 → Create bucket**. Name it `herb-media` (or another name you will paste into `R2_BUCKET`). Pick a location close to the centre if Cloudflare asks. This name is not the public hostname.
@@ -55,7 +103,9 @@ Set `UPLOAD_TOKEN` next to the `R2_*` variables. Scrap keys cannot land in `herb
   {
     "AllowedOrigins": [
       "https://herbant.vercel.app",
-      "http://localhost:4200"
+      "https://binter.vercel.app",
+      "http://localhost:4200",
+      "http://localhost:5173"
     ],
     "AllowedMethods": ["GET", "PUT", "HEAD"],
     "AllowedHeaders": ["Content-Type"],
@@ -86,11 +136,11 @@ The API talks to R2 as S3. You do not create an AWS account, and you do not set 
 openssl rand -hex 32
 ```
 
-3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of `http://localhost:4200` and `https://herbant.vercel.app`.
+3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, and `https://binter.vercel.app`.
 4. Deploy. Open `https://<your-service>.onrender.com/health`. You want:
 
 ```json
-{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
+{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true,"binter_notifier_configured":true,"binter_receiver_configured":true,"binter_admin_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
 ```
 
 `r2_missing` lists variable **names** only. A missing name means that slot is empty in Render. Edit the env var and redeploy if the start command already captured the old environment. Render injects env at boot.
@@ -108,6 +158,9 @@ openssl rand -hex 32
 | `R2_PUBLIC_BASE_URL` | same | Safe to be public. herbant will need it to render images |
 | `HERB_API_KEY` | Render env | Optional. `1001` can sign herbant media. This key still works on `X-Herb-Key` or `Authorization: Bearer` |
 | `UPLOAD_TOKEN` | Render env, local `.env` | Scrap desk login. `2001` stays the read-only login |
+| `BINTER_NOTIFIER_TOKEN` | Render env, local `.env` | Number the authority gives the person who raises a collect |
+| `BINTER_RECEIVER_TOKEN` | Render env, local `.env` | Number the authority gives the vehicle |
+| `BINTER_ADMIN_TOKEN` | Render env, local `.env` | Number for the weekly and monthly sheet |
 | `MONGODB_URL` | Render env, local `.env` | Contains the database username and password |
 | `MONGODB_DATABASE` | same | `herb` unless you choose another name on this cluster |
 | `.env` | your machine only | `.gitignore` already excludes it |
