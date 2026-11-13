@@ -10,6 +10,7 @@ from .cors_config import load_cors_origin_regex, load_cors_origins
 from .database import load_settings, mongo_configured, mongo_host, mongo_missing_env, ping
 from .media import router as media_router
 from .r2 import r2_configured, r2_missing_env
+from .room import router as room_router
 from .scrap_portal import router as scrap_router
 
 _openapi_enabled = os.getenv("OPENAPI_ENABLED", "true").lower() in {"1", "true", "yes"}
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(media_router)
 app.include_router(scrap_router)
 app.include_router(scrap_router, prefix="/api")
+app.include_router(room_router, prefix="/api")
 
 
 @app.get("/health")
