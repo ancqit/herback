@@ -112,6 +112,79 @@ def test_presign_put_is_local(monkeypatch: pytest.MonkeyPatch):
     assert body["max_bytes"] == 8 * 1024 * 1024
 
 
+def test_video_sign_matches_junction_shorts(monkeypatch: pytest.MonkeyPatch):
+    _configure(monkeypatch)
+    monkeypatch.delenv("HERB_API_KEY")
+    from app.main import app
+
+    response = TestClient(app).post(
+        "/api/media/sign",
+        json={
+            "kind": "video",
+            "place": "schedule",
+            "content_type": "application/mp4",
+            "filename": "circle.m4v",
+        },
+        headers={"Authorization": "Bearer 1001"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["kind"] == "video"
+    assert body["object_key"].startswith("herb/videos/schedule/")
+    assert body["object_key"].endswith(".mp4")
+    assert body["content_type"] == "video/mp4"
+    assert body["upload_method"] == "PUT"
+    assert body["headers"] == {"Content-Type": "video/mp4"}
+    assert body["max_bytes"] == 40 * 1024 * 1024
+    assert "shorts/" not in body["object_key"]
+
+
+def test_video_aliases_and_places(monkeypatch: pytest.MonkeyPatch):
+    _configure(monkeypatch)
+    from app.main import app
+    client = TestClient(app)
+    headers = {"X-Herb-Key": "test-key"}
+
+    webm = client.post(
+        "/media/sign",
+        json={"kind": "video", "place": "coach", "content_type": "video/x-matroska", "filename": "talk.mkv"},
+        headers=headers,
+    )
+    assert webm.status_code == 200
+    assert webm.json()["object_key"].startswith("herb/videos/coach/")
+    assert webm.json()["object_key"].endswith(".webm")
+    assert webm.json()["content_type"] == "video/webm"
+
+    mov = client.post(
+        "/media/sign",
+        json={"kind": "video", "place": "centre", "content_type": "", "filename": "room.mov"},
+        headers=headers,
+    )
+    assert mov.status_code == 200
+    assert mov.json()["object_key"].startswith("herb/videos/centre/")
+    assert mov.json()["content_type"] == "video/quicktime"
+
+    picture = client.post(
+        "/media/sign",
+        json={"kind": "image", "place": "centre", "content_type": "image/png", "filename": "door.png"},
+        headers=headers,
+    )
+    assert picture.status_code == 200
+    assert picture.json()["object_key"].startswith("herb/images/centre/")
+
+
+def test_user_pass_cannot_sign(monkeypatch: pytest.MonkeyPatch):
+    _configure(monkeypatch)
+    from app.main import app
+
+    response = TestClient(app).post(
+        "/media/sign",
+        json={"kind": "video", "place": "coach", "content_type": "video/mp4"},
+        headers={"Authorization": "Bearer 2001"},
+    )
+    assert response.status_code == 401
+
+
 def test_presign_rejects_unknown_type(monkeypatch: pytest.MonkeyPatch):
     _configure(monkeypatch)
     from app.main import app

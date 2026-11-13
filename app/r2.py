@@ -19,8 +19,11 @@ from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException, status
 
-MediaKind = Literal["image", "document", "audio"]
+MediaKind = Literal["image", "document", "audio", "video"]
+MediaPlace = Literal["schedule", "coach", "centre"]
 
+# Video types and the 40 MB cap match junctionBack shorts (`video/mp4`, `video/webm`,
+# `video/quicktime`). Keys stay under `herb/` so they never land in `shorts/`.
 _KIND_EXTS: dict[MediaKind, dict[str, str]] = {
     "image": {
         "image/jpeg": ".jpg",
@@ -39,6 +42,11 @@ _KIND_EXTS: dict[MediaKind, dict[str, str]] = {
         "audio/x-wav": ".wav",
         "audio/webm": ".webm",
     },
+    "video": {
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/quicktime": ".mov",
+    },
 }
 
 _CONTENT_TYPE_ALIASES = {
@@ -46,22 +54,29 @@ _CONTENT_TYPE_ALIASES = {
     "audio/mp3": "audio/mpeg",
     "audio/x-m4a": "audio/mp4",
     "application/x-pdf": "application/pdf",
+    "video/x-matroska": "video/webm",
+    "video/mkv": "video/webm",
+    "application/mp4": "video/mp4",
 }
 
 _PREFIX = {
     "image": "herb/images",
     "document": "herb/documents",
     "audio": "herb/audio",
+    "video": "herb/videos",
 }
 
 _KEY_RE = re.compile(
-    r"^herb/(images|documents|audio)/[a-f0-9]{32}\.(jpg|png|webp|gif|pdf|mp3|m4a|wav|aac|webm)$"
+    r"^herb/(images|documents|audio|videos)"
+    r"(?:/(?:schedule|coach|centre))?"
+    r"/[a-f0-9]{32}\.(jpg|png|webp|gif|pdf|mp3|m4a|wav|aac|webm|mp4|mov)$"
 )
 
 MAX_BYTES: dict[MediaKind, int] = {
     "image": 8 * 1024 * 1024,
     "document": 15 * 1024 * 1024,
     "audio": 20 * 1024 * 1024,
+    "video": 40 * 1024 * 1024,
 }
 
 
@@ -179,6 +194,13 @@ def normalize_content_type(kind: MediaKind, content_type: str, filename: str = "
         ]
     elif kind == "document":
         guesses = [(".pdf", "application/pdf")]
+    elif kind == "video":
+        guesses = [
+            (".webm", "video/webm"),
+            (".mov", "video/quicktime"),
+            (".m4v", "video/mp4"),
+            (".mp4", "video/mp4"),
+        ]
     else:
         guesses = [
             (".mp3", "audio/mpeg"),
@@ -212,20 +234,27 @@ def assert_owned_key(object_key: str) -> str:
     return key
 
 
-def new_object_key(kind: MediaKind, content_type: str) -> str:
+def new_object_key(kind: MediaKind, content_type: str, place: MediaPlace | None = None) -> str:
     ext = _KIND_EXTS[kind].get(content_type)
     if not ext:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported {kind} content type",
         )
-    return f"{_PREFIX[kind]}/{uuid.uuid4().hex}{ext}"
+    folder = f"{_PREFIX[kind]}/{place}" if place else _PREFIX[kind]
+    return f"{folder}/{uuid.uuid4().hex}{ext}"
 
 
-def presign_put(*, kind: MediaKind, content_type: str, filename: str = "") -> dict:
+def presign_put(
+    *,
+    kind: MediaKind,
+    content_type: str,
+    filename: str = "",
+    place: MediaPlace | None = None,
+) -> dict:
     settings = require_r2()
     content_type = normalize_content_type(kind, content_type, filename)
-    object_key = new_object_key(kind, content_type)
+    object_key = new_object_key(kind, content_type, place)
     upload_url = client_for(settings).generate_presigned_url(
         "put_object",
         Params={

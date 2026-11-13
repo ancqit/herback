@@ -106,7 +106,7 @@ openssl rand -hex 32
 | `R2_ACCOUNT_ID` | same | Not secret, but keep it with the other R2 values |
 | `R2_BUCKET` | same | Bucket name |
 | `R2_PUBLIC_BASE_URL` | same | Safe to be public. herbant will need it to render images |
-| `HERB_API_KEY` | Render env | Required on `X-Herb-Key` or `Authorization: Bearer` |
+| `HERB_API_KEY` | Render env | Optional. `1001` can sign herbant media. This key still works on `X-Herb-Key` or `Authorization: Bearer` |
 | `UPLOAD_TOKEN` | Render env, local `.env` | Scrap desk login. `2001` stays the read-only login |
 | `MONGODB_URL` | Render env, local `.env` | Contains the database username and password |
 | `MONGODB_DATABASE` | same | `herb` unless you choose another name on this cluster |
@@ -125,7 +125,9 @@ curl -s https://<your-service>.onrender.com/media/sign \
   -d '{"kind":"image","content_type":"image/jpeg","filename":"shelf.jpg"}'
 ```
 
-`kind` is `image` (jpeg, png, webp, gif, 8 MB), `document` (pdf, 15 MB), or `audio` (mp3, m4a, aac, wav, webm, 20 MB). Keys look like `herb/images/<32 hex>.jpg`. `public_url` is the lasting read URL.
+`kind` is `image` (jpeg, png, webp, gif, 8 MB), `document` (pdf, 15 MB), `audio` (mp3, m4a, aac, wav, webm, 20 MB), or `video`. Video follows junctionBack shorts and jMonster: mp4, webm, and mov, 40 MB, signed PUT with that `Content-Type`. A phone `.m4v` or `application/mp4` is stored as mp4. Keys look like `herb/videos/schedule/<32 hex>.mp4`. `place` is `schedule`, `coach`, or `centre`. The same bucket holds scrap under `2001/` and these files under `herb/`, never under `shorts/`.
+
+The herbant admin pass `1001` can mint the URL (`Authorization: Bearer 1001` or `X-Herb-Key`). `HERB_API_KEY` still works for a caller outside the room. The user pass `2001` cannot sign. `public_url` is the lasting read URL.
 
 `POST /media` accepts a multipart file (`kind` + `file`) and uploads through this server. Use that only when bucket CORS is not ready yet. The presigned PUT is the path to keep.
 
