@@ -1,0 +1,27 @@
+# Render Blueprint. Dashboard → New → Blueprint → this repo.
+# Each sync:false key is filled in the Render UI and stored as a secret.
+services:
+  - type: web
+    name: herback
+    runtime: docker
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: HERB_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: OPENAPI_ENABLED
+        value: "true"
