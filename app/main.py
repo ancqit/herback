@@ -34,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(media_router)
+app.include_router(media_router, prefix="/api")
 app.include_router(scrap_router)
 app.include_router(scrap_router, prefix="/api")
 app.include_router(room_router, prefix="/api")
