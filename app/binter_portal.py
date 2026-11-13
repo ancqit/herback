@@ -641,13 +641,13 @@ def create_request(request: Request, body: dict = Body(...)) -> dict:
     return _with_state(write, save=True)
 
 
-@router.post("/requests/{request_id}/accept")
-def accept_request(request_id: str, request: Request) -> dict:
+@router.post("/requests/{id}/accept")
+def accept_request(id: str, request: Request) -> dict:
     _require(request, "receiver")
     vehicle = _vehicle_header(request)
 
     def write(state: dict) -> dict:
-        item = _find(state, request_id)
+        item = _find(state, id)
         if item.get("status") != "open":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ALREADY_TAKEN)
         profile = state["profiles"].get(vehicle)
@@ -661,13 +661,13 @@ def accept_request(request_id: str, request: Request) -> dict:
     return _with_state(write, save=True)
 
 
-@router.post("/requests/{request_id}/complete")
-def complete_request(request_id: str, request: Request) -> dict:
+@router.post("/requests/{id}/complete")
+def complete_request(id: str, request: Request) -> dict:
     _require(request, "receiver")
     vehicle = _vehicle_header(request)
 
     def write(state: dict) -> dict:
-        item = _find(state, request_id)
+        item = _find(state, id)
         if item.get("status") != "accepted":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=NOT_ON_THE_WAY)
         receiver = item.get("receiver") if isinstance(item.get("receiver"), dict) else {}
