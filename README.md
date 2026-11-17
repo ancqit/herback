@@ -100,26 +100,27 @@ Two numbers are set on this service. The operator fills them on Render. A blank 
 
 | Number | Role |
 | --- | --- |
-| `CART_ENTITY_TOKEN` | The entity. Sees carts that already have vegetables. |
+| `CART_ENTITY_TOKEN` | The entity. Sees carts that already hold vegetables or other things. |
 | `CART_LOADER_TOKEN` | The desk. A small token field creates a cart. |
 
-A cart token is typed by the loader. That token is the cart. Opening it shows the schedule and the vegetables. Choosing vegetables and an address issues a driver token. The driver enters that token and sees the address.
+A cart token is typed by the loader. That token is the cart. Creating it records a schedule for each address. The desk then fills a form with vegetables and other things, each with a price and a fresh photograph. Opening the cart shows those addresses and those things. Choosing one address and adding things issues a driver token. The driver enters that token and sees that address and its schedule.
 
-Fresh photographs go to the same R2 bucket. The server chooses keys under `cart/photos/`. Nothing lands in `herb/`, `2001/`, `binter/`, or `shorts/`. State is `cart/state.json`. A public cart does not include the cart token or the object key. The photograph URL is the public CDN URL. Orders older than 30 days drop on the next read or write. Photographs stay with the cart until the vegetable or the cart is removed.
+Fresh photographs go to the same R2 bucket. The server chooses keys under `cart/photos/`. Nothing lands in `herb/`, `2001/`, `binter/`, or `shorts/`. State is `cart/state.json`. A public cart does not include the cart token or the object key. The photograph URL is the public CDN URL. Orders older than 30 days drop on the next read or write. Photographs stay with the cart until the thing or the cart is removed.
 
 | Route | What it does |
 | --- | --- |
 | `POST /cart/login` | Body `{ token }`. Entity, loader, a cart token, or a driver token. |
 | `POST /cart/upload-url` | Loader. Presigned PUT for a fresh photograph. |
 | `GET /cart/carts` | Entity sees loaded carts. Loader sees every cart. A cart token sees that cart. |
-| `POST /cart/carts` | Loader creates a cart from a token, a name, and a schedule. |
-| `GET /cart/carts/{id}` | One cart, with prices and photograph URLs. |
-| `POST /cart/carts/{id}/schedule` | Loader replaces the schedule. |
-| `POST /cart/carts/{id}/veggies` | Loader adds a vegetable, a price, and a photograph. |
-| `DELETE /cart/carts/{id}/veggies/{veggie_id}` | Loader removes the vegetable and its photograph. |
+| `POST /cart/carts` | Loader creates a cart from a token, a name, and stops. Each stop is an address plus a schedule. |
+| `GET /cart/carts/{id}` | One cart, with addresses, prices, and photograph URLs. |
+| `POST /cart/carts/{id}/stops` | Loader adds another address and its schedule. |
+| `DELETE /cart/carts/{id}/stops/{stop_id}` | Loader removes an address. The last address stays. |
+| `POST /cart/carts/{id}/items` | Loader adds a vegetable or another thing, a price, and a photograph. |
+| `DELETE /cart/carts/{id}/items/{item_id}` | Loader removes that thing and its photograph. |
 | `DELETE /cart/carts/{id}` | Loader removes the cart and its photographs. |
-| `POST /cart/orders` | Entity or the cart token. Address plus vegetables. Returns the driver token. |
-| `GET /cart/slip` | Driver. The address, the schedule, and the vegetables. |
+| `POST /cart/orders` | Entity or the cart token. One of the cart's addresses, plus vegetables and other things. Returns the driver token. |
+| `GET /cart/slip` | Driver. The address, its schedule, and the things. |
 | `POST /cart/orders/arrive` | Driver marks the address arrived. |
 
 The bucket CORS policy must allow the cart origin to PUT, the same way it allows herbant. Include `https://cart.vercel.app` and `http://localhost:4200`.
