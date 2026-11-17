@@ -53,14 +53,18 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _schedule() -> dict:
-    return {"days": ["Mon", "Wed", "Fri"], "start": "07:00", "end": "09:30", "note": "Park gate"}
+def _schedule(note: str = "Park gate", start: str = "07:00", end: str = "09:30") -> dict:
+    return {"days": ["Mon", "Wed", "Fri"], "start": start, "end": end, "note": note}
 
 
-def _create(token: str = "CartTok9") -> dict:
+def _stop(address: str = "12 Neem Lane, near the park", **schedule: str) -> dict:
+    return {"address": address, "schedule": _schedule(**schedule)}
+
+
+def _create(token: str = "CartTok9", stops: list[dict] | None = None) -> dict:
     created = client.post(
         "/cart/carts",
-        json={"token": token, "name": "Park gate", "schedule": _schedule()},
+        json={"token": token, "name": "Park gate", "stops": stops or [_stop()]},
         headers=_auth(LOADER),
     )
     assert created.status_code == 201
@@ -121,9 +125,16 @@ def test_photo_keys_stay_under_cart_photos(monkeypatch: pytest.MonkeyPatch):
 
 def test_entity_sees_loaded_carts_and_the_driver_gets_a_token(monkeypatch: pytest.MonkeyPatch):
     bucket = _install(monkeypatch)
-    cart = _create()
+    cart = _create(
+        stops=[
+            _stop(),
+            _stop("4 Market Road, beside the well", note="Market", start="16:00", end="18:00"),
+        ]
+    )
     assert cart["token"] == "CartTok9"
     assert cart["loaded"] is False
+    assert len(cart["stops"]) == 2
+    assert cart["stops"][1]["schedule"]["start"] == "16:00"
     assert client.get("/cart/carts", headers=_auth(ENTITY)).json() == {"carts": []}
 
     signed = client.post(
@@ -132,15 +143,35 @@ def test_entity_sees_loaded_carts_and_the_driver_gets_a_token(monkeypatch: pytes
         headers=_auth(LOADER),
     ).json()
     added = client.post(
-        f"/cart/carts/{cart['id']}/veggies",
-        json={"name": "Spinach", "price": 40, "unit": "bunch", "photo": _photo(signed["object_key"])},
+        f"/cart/carts/{cart['id']}/items",
+        json={
+            "kind": "veggie",
+            "name": "Spinach",
+            "price": 40,
+            "unit": "bunch",
+            "photo": _photo(signed["object_key"]),
+        },
         headers=_auth(LOADER),
     )
     assert added.status_code == 201
-    veggie = added.json()["cart"]["veggies"][0]
+    veggie = added.json()["cart"]["items"][0]
+    assert veggie["kind"] == "veggie"
     assert veggie["photo"]["url"] == f"https://media.example/{signed['object_key']}"
     assert "object_key" not in added.text
     assert "cart/state.json" in bucket.objects
+    other = client.post(
+        f"/cart/carts/{cart['id']}/items",
+        json={
+            "kind": "other",
+            "name": "Honey",
+            "price": 120,
+            "unit": "piece",
+            "photo": _photo(signed["object_key"]),
+        },
+        headers=_auth(LOADER),
+    )
+    assert other.status_code == 201
+    assert other.json()["cart"]["items"][1]["kind"] == "other"
 
     listed = client.get("/api/cart/carts", headers=_auth(ENTITY))
     assert listed.status_code == 200
@@ -156,19 +187,23 @@ def test_entity_sees_loaded_carts_and_the_driver_gets_a_token(monkeypatch: pytes
         "/cart/orders",
         json={
             "cart_id": cart["id"],
-            "address": "12 Neem Lane, near the park",
-            "lines": [{"veggie_id": veggie["id"], "qty": 2}],
+            "stop_id": cart["stops"][1]["id"],
+            "lines": [
+                {"item_id": veggie["id"], "qty": 2},
+                {"item_id": other.json()["cart"]["items"][1]["id"], "qty": 1},
+            ],
         },
         headers=_auth(ENTITY),
     )
     assert ordered.status_code == 201
     slip = ordered.json()["slip"]
-    assert slip["address"] == "12 Neem Lane, near the park"
+    assert slip["address"] == "4 Market Road, beside the well"
     assert slip["lines"][0]["name"] == "Spinach"
     assert slip["lines"][0]["qty"] == 2
-    assert slip["total"] == 80
+    assert slip["lines"][1]["kind"] == "other"
+    assert slip["total"] == 200
     assert len(slip["driver_token"]) == 8
-    assert slip["schedule"]["start"] == "07:00"
+    assert slip["schedule"]["start"] == "16:00"
 
     driver = client.post("/cart/login", json={"token": slip["driver_token"]})
     assert driver.status_code == 200
@@ -183,7 +218,7 @@ def test_entity_sees_loaded_carts_and_the_driver_gets_a_token(monkeypatch: pytes
 
     refused = client.post(
         "/cart/orders",
-        json={"cart_id": cart["id"], "address": "12 Neem Lane, near the park", "lines": []},
+        json={"cart_id": cart["id"], "stop_id": cart["stops"][0]["id"], "lines": []},
         headers=_auth(LOADER),
     )
     assert refused.status_code == 403
@@ -193,8 +228,9 @@ def test_rejects_foreign_photo_keys_and_a_duplicate_cart_token(monkeypatch: pyte
     _install(monkeypatch)
     cart = _create("CartTok9")
     foreign = client.post(
-        f"/cart/carts/{cart['id']}/veggies",
+        f"/cart/carts/{cart['id']}/items",
         json={
+            "kind": "veggie",
             "name": "Mint",
             "price": 10,
             "unit": "bunch",
@@ -204,8 +240,9 @@ def test_rejects_foreign_photo_keys_and_a_duplicate_cart_token(monkeypatch: pyte
     )
     assert foreign.status_code == 400
     herb = client.post(
-        f"/cart/carts/{cart['id']}/veggies",
+        f"/cart/carts/{cart['id']}/items",
         json={
+            "kind": "veggie",
             "name": "Mint",
             "price": 10,
             "unit": "bunch",
@@ -216,13 +253,13 @@ def test_rejects_foreign_photo_keys_and_a_duplicate_cart_token(monkeypatch: pyte
     assert herb.status_code == 400
     duplicate = client.post(
         "/cart/carts",
-        json={"token": "CartTok9", "name": "Other", "schedule": _schedule()},
+        json={"token": "CartTok9", "name": "Other", "stops": [_stop()]},
         headers=_auth(LOADER),
     )
     assert duplicate.status_code == 409
     assert client.post(
         "/cart/carts",
-        json={"token": "no", "name": "Other", "schedule": _schedule()},
+        json={"token": "no", "name": "Other", "stops": [_stop()]},
         headers=_auth(LOADER),
     ).status_code == 400
 
@@ -234,23 +271,24 @@ def test_a_cart_token_cannot_order_another_cart(monkeypatch: pytest.MonkeyPatch)
     photo = "cart/photos/" + "d" * 32 + ".jpg"
     for cart in (first, second):
         added = client.post(
-            f"/cart/carts/{cart['id']}/veggies",
-            json={"name": "Beans", "price": 60, "unit": "kg", "photo": _photo(photo)},
+            f"/cart/carts/{cart['id']}/items",
+            json={"kind": "veggie", "name": "Beans", "price": 60, "unit": "kg", "photo": _photo(photo)},
             headers=_auth(LOADER),
         )
         assert added.status_code == 201
-        cart["veggie_id"] = added.json()["cart"]["veggies"][0]["id"]
+        cart["item_id"] = added.json()["cart"]["items"][0]["id"]
+        cart["stop_id"] = added.json()["cart"]["stops"][0]["id"]
     blocked = client.post(
         "/cart/orders",
         json={
             "cart_id": second["id"],
-            "address": "12 Neem Lane, near the park",
-            "lines": [{"veggie_id": second["veggie_id"], "qty": 1}],
+            "stop_id": second["stop_id"],
+            "lines": [{"item_id": second["item_id"], "qty": 1}],
         },
         headers=_auth("CartTok9"),
     )
     assert blocked.status_code == 403
-    removed = client.delete(f"/cart/carts/{first['id']}/veggies/{first['veggie_id']}", headers=_auth(LOADER))
+    removed = client.delete(f"/cart/carts/{first['id']}/items/{first['item_id']}", headers=_auth(LOADER))
     assert removed.status_code == 204
     assert photo in bucket.deleted
     gone = client.delete(f"/cart/carts/{second['id']}", headers=_auth(LOADER))

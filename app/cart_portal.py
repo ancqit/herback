@@ -4,7 +4,8 @@ The cart portal calls these routes. Fresh photographs and the cart list live
 under ``cart/``. herbant stays under ``herb/``, scrap under ``2001/``, and
 binter under ``binter/``. ``CART_ENTITY_TOKEN`` and ``CART_LOADER_TOKEN`` are
 the two doors. A blank value keeps that door shut. A cart token is the cart.
-A driver token is issued when vegetables are chosen for an address.
+A driver token is issued when vegetables or other things are chosen
+for one of the cart's addresses. Each address has its own schedule.
 """
 
 from __future__ import annotations
@@ -28,15 +29,20 @@ STATE_KEY = "cart/state.json"
 RETENTION = timedelta(days=30)
 PHOTO_MAX_BYTES = 8 * 1024 * 1024
 MAX_CARTS = 40
-MAX_VEGGIES = 30
+MAX_ITEMS = 30
+MAX_STOPS = 12
 _LOCK = threading.Lock()
 
 DOOR_SHUT = "That number does not open the portal."
 WRONG_ROLE = "That number cannot do this."
 NOT_FOUND = "That cart is not in the portal."
 NOT_LOADED = "That cart is not loaded."
-BAD_VEGGIE = "Add a vegetable from this cart."
+BAD_ITEM = "Add something from this cart."
+BAD_KIND = "Choose a vegetable or another thing."
 BAD_ADDRESS = "Address must be 8 to 160 characters."
+NEED_STOP = "Choose one of this cart's addresses."
+LAST_STOP = "A cart keeps at least one address."
+TOO_MANY_STOPS = "This cart already has 12 addresses."
 BAD_TOKEN = "Cart token must be 4 to 32 letters or numbers."
 TAKEN = "That cart token is already in use."
 BAD_PRICE = "Price must be a number from 0 to 10000."
@@ -56,6 +62,7 @@ INVALID_KEY = "invalid key"
 
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 UNITS = ("kg", "bunch", "piece")
+KINDS = ("veggie", "other")
 PHOTO_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 _ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg"}
 _HEX = r"[a-f0-9]{32}"
@@ -142,6 +149,30 @@ def _schedule(raw: object) -> dict:
     if len(note) > 80 or (note and not all(ch.isalnum() or ch in _NOTE_MARKS for ch in note)):
         raise HTTPException(status_code=400, detail=BAD_NOTE)
     return {"days": days, "start": start, "end": end, "note": note}
+
+
+def _kind(raw: object) -> str:
+    if raw not in KINDS:
+        raise HTTPException(status_code=400, detail=BAD_KIND)
+    return str(raw)
+
+
+def _stop(raw: object, *, stop_id: str | None = None) -> dict:
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail=BAD_ADDRESS)
+    return {
+        "id": stop_id or uuid.uuid4().hex,
+        "address": _address(raw.get("address")),
+        "schedule": _schedule(raw.get("schedule")),
+    }
+
+
+def _stops(raw: object) -> list[dict]:
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(status_code=400, detail=BAD_ADDRESS)
+    if len(raw) > MAX_STOPS:
+        raise HTTPException(status_code=400, detail=TOO_MANY_STOPS)
+    return [_stop(entry) for entry in raw]
 
 
 def _price(raw: object) -> float:
@@ -348,25 +379,64 @@ def _public_photo(photo: dict) -> dict:
     }
 
 
-def _public_veggie(veggie: dict) -> dict:
-    photo = veggie.get("photo") if isinstance(veggie.get("photo"), dict) else {}
+def _stored_items(cart: dict) -> list[dict]:
+    if isinstance(cart.get("items"), list):
+        return [item for item in cart["items"] if isinstance(item, dict)]
+    veggies = cart.get("veggies") if isinstance(cart.get("veggies"), list) else []
+    rows: list[dict] = []
+    for item in veggies:
+        if isinstance(item, dict):
+            copied = dict(item)
+            copied.setdefault("kind", "veggie")
+            rows.append(copied)
+    return rows
+
+
+def _stored_stops(cart: dict) -> list[dict]:
+    if isinstance(cart.get("stops"), list) and cart["stops"]:
+        return [stop for stop in cart["stops"] if isinstance(stop, dict)]
+    schedule = cart.get("schedule")
+    if isinstance(schedule, dict):
+        address = cart.get("address") if isinstance(cart.get("address"), str) else ""
+        return [{"id": cart.get("id"), "address": address, "schedule": schedule}]
+    return []
+
+
+def _adopt(cart: dict) -> None:
+    cart["items"] = _stored_items(cart)
+    cart["stops"] = _stored_stops(cart)
+    cart.pop("veggies", None)
+    cart.pop("schedule", None)
+
+
+def _public_item(item: dict) -> dict:
+    photo = item.get("photo") if isinstance(item.get("photo"), dict) else {}
     return {
-        "id": veggie.get("id"),
-        "name": veggie.get("name"),
-        "price": veggie.get("price"),
-        "unit": veggie.get("unit"),
+        "id": item.get("id"),
+        "kind": item.get("kind") if item.get("kind") in KINDS else "veggie",
+        "name": item.get("name"),
+        "price": item.get("price"),
+        "unit": item.get("unit"),
         "photo": _public_photo(photo),
     }
 
 
+def _public_stop(stop: dict) -> dict:
+    return {
+        "id": stop.get("id"),
+        "address": stop.get("address"),
+        "schedule": stop.get("schedule"),
+    }
+
+
 def _public_cart(cart: dict, *, show_token: bool) -> dict:
-    veggies = cart.get("veggies") if isinstance(cart.get("veggies"), list) else []
+    items = _stored_items(cart)
     body = {
         "id": cart.get("id"),
         "name": cart.get("name"),
-        "schedule": cart.get("schedule"),
-        "veggies": [_public_veggie(item) for item in veggies if isinstance(item, dict)],
-        "loaded": bool(veggies),
+        "stops": [_public_stop(stop) for stop in _stored_stops(cart)],
+        "items": [_public_item(item) for item in items],
+        "loaded": bool(items),
         "created_at": cart.get("created_at"),
     }
     if show_token:
@@ -380,8 +450,7 @@ def _visible(cart: dict, role: str, cart_id: str | None) -> bool:
     if role == "cart":
         return cart.get("id") == cart_id
     if role == "entity":
-        veggies = cart.get("veggies")
-        return isinstance(veggies, list) and len(veggies) > 0
+        return bool(_stored_items(cart))
     return False
 
 
@@ -394,42 +463,43 @@ def _driver_token(state: dict) -> str:
 
 
 def _lines(cart: dict, raw: object) -> list[dict]:
-    if not isinstance(raw, list) or not raw or len(raw) > MAX_VEGGIES:
-        raise HTTPException(status_code=400, detail=BAD_VEGGIE)
-    veggies = {
+    if not isinstance(raw, list) or not raw or len(raw) > MAX_ITEMS:
+        raise HTTPException(status_code=400, detail=BAD_ITEM)
+    items = {
         item.get("id"): item
-        for item in cart.get("veggies") or []
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
+        for item in _stored_items(cart)
+        if isinstance(item.get("id"), str)
     }
-    if not veggies:
+    if not items:
         raise HTTPException(status_code=400, detail=NOT_LOADED)
     merged: dict[str, int] = {}
     order: list[str] = []
     for entry in raw:
         if not isinstance(entry, dict):
-            raise HTTPException(status_code=400, detail=BAD_VEGGIE)
-        veggie_id = entry.get("veggie_id")
+            raise HTTPException(status_code=400, detail=BAD_ITEM)
+        item_id = entry.get("item_id")
         qty = entry.get("qty")
-        if not isinstance(veggie_id, str) or veggie_id not in veggies:
-            raise HTTPException(status_code=400, detail=BAD_VEGGIE)
+        if not isinstance(item_id, str) or item_id not in items:
+            raise HTTPException(status_code=400, detail=BAD_ITEM)
         if isinstance(qty, bool) or not isinstance(qty, int) or not 1 <= qty <= 20:
             raise HTTPException(status_code=400, detail=BAD_QTY)
-        if veggie_id not in merged:
-            order.append(veggie_id)
-            merged[veggie_id] = 0
-        merged[veggie_id] += qty
-        if merged[veggie_id] > 20:
+        if item_id not in merged:
+            order.append(item_id)
+            merged[item_id] = 0
+        merged[item_id] += qty
+        if merged[item_id] > 20:
             raise HTTPException(status_code=400, detail=BAD_QTY)
     lines = []
-    for veggie_id in order:
-        veggie = veggies[veggie_id]
+    for item_id in order:
+        item = items[item_id]
         lines.append(
             {
-                "veggie_id": veggie_id,
-                "name": veggie.get("name"),
-                "price": veggie.get("price"),
-                "unit": veggie.get("unit"),
-                "qty": merged[veggie_id],
+                "item_id": item_id,
+                "kind": item.get("kind") if item.get("kind") in KINDS else "veggie",
+                "name": item.get("name"),
+                "price": item.get("price"),
+                "unit": item.get("unit"),
+                "qty": merged[item_id],
             }
         )
     return lines
@@ -454,10 +524,8 @@ def _public_slip(order: dict) -> dict:
 
 def _photo_keys(cart: dict) -> list[str]:
     keys: list[str] = []
-    for veggie in cart.get("veggies") or []:
-        if not isinstance(veggie, dict):
-            continue
-        photo = veggie.get("photo")
+    for item in _stored_items(cart):
+        photo = item.get("photo")
         if isinstance(photo, dict) and isinstance(photo.get("object_key"), str):
             key = photo["object_key"]
             if key.startswith("cart/photos/"):
@@ -531,7 +599,7 @@ def create_cart(request: Request, body: dict = Body(...)) -> dict:
         raise HTTPException(status_code=400, detail="Expected JSON object")
     token = _cart_token(body.get("token"))
     name = _short_name(body.get("name"))
-    schedule = _schedule(body.get("schedule"))
+    stops = _stops(body.get("stops"))
 
     def write(state: dict) -> dict:
         if len(state["carts"]) >= MAX_CARTS:
@@ -542,8 +610,8 @@ def create_cart(request: Request, body: dict = Body(...)) -> dict:
             "id": uuid.uuid4().hex,
             "token": token,
             "name": name,
-            "schedule": schedule,
-            "veggies": [],
+            "stops": stops,
+            "items": [],
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         state["carts"].insert(0, cart)
@@ -564,24 +632,46 @@ def get_cart(cart_id: str, request: Request) -> dict:
     return _with_state(read, save=False)
 
 
-@router.post("/carts/{cart_id}/schedule")
-def save_schedule(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
+@router.post("/carts/{cart_id}/stops", status_code=status.HTTP_201_CREATED)
+def add_stop(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
     _allow(request, "loader")
-    schedule = _schedule(body)
+    stop = _stop(body)
 
     def write(state: dict) -> dict:
         cart = _find_cart(state, cart_id)
-        cart["schedule"] = schedule
+        _adopt(cart)
+        if len(cart["stops"]) >= MAX_STOPS:
+            raise HTTPException(status_code=400, detail=TOO_MANY_STOPS)
+        cart["stops"].append(stop)
         return {"cart": _public_cart(cart, show_token=True)}
 
     return _with_state(write, save=True)
 
 
-@router.post("/carts/{cart_id}/veggies", status_code=status.HTTP_201_CREATED)
-def add_veggie(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
+@router.delete("/carts/{cart_id}/stops/{stop_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_stop(cart_id: str, stop_id: str, request: Request) -> Response:
+    _allow(request, "loader")
+
+    def write(state: dict) -> None:
+        cart = _find_cart(state, cart_id)
+        _adopt(cart)
+        stops = cart["stops"]
+        if not any(stop.get("id") == stop_id for stop in stops):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NEED_STOP)
+        if len(stops) <= 1:
+            raise HTTPException(status_code=400, detail=LAST_STOP)
+        cart["stops"] = [stop for stop in stops if stop.get("id") != stop_id]
+
+    _with_state(write, save=True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/carts/{cart_id}/items", status_code=status.HTTP_201_CREATED)
+def add_item(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
     _allow(request, "loader")
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Expected JSON object")
+    kind = _kind(body.get("kind"))
     name = _short_name(body.get("name"))
     price = _price(body.get("price"))
     unit = _unit(body.get("unit"))
@@ -591,15 +681,13 @@ def add_veggie(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
 
     def write(state: dict) -> dict:
         cart = _find_cart(state, cart_id)
-        veggies = cart.get("veggies")
-        if not isinstance(veggies, list):
-            veggies = []
-            cart["veggies"] = veggies
-        if len(veggies) >= MAX_VEGGIES:
+        _adopt(cart)
+        if len(cart["items"]) >= MAX_ITEMS:
             raise HTTPException(status_code=400, detail=FULL)
-        veggies.append(
+        cart["items"].append(
             {
                 "id": uuid.uuid4().hex,
+                "kind": kind,
                 "name": name,
                 "price": price,
                 "unit": unit,
@@ -611,21 +699,22 @@ def add_veggie(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
     return _with_state(write, save=True)
 
 
-@router.delete("/carts/{cart_id}/veggies/{veggie_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_veggie(cart_id: str, veggie_id: str, request: Request) -> Response:
+@router.delete("/carts/{cart_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_item(cart_id: str, item_id: str, request: Request) -> Response:
     _allow(request, "loader")
 
     def write(state: dict) -> None:
         cart = _find_cart(state, cart_id)
-        veggies = [item for item in cart.get("veggies") or [] if isinstance(item, dict)]
-        found = next((item for item in veggies if item.get("id") == veggie_id), None)
+        _adopt(cart)
+        items = cart["items"]
+        found = next((item for item in items if item.get("id") == item_id), None)
         if found is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=BAD_VEGGIE)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=BAD_ITEM)
         photo = found.get("photo") if isinstance(found.get("photo"), dict) else {}
         key = photo.get("object_key")
         if isinstance(key, str) and key.startswith("cart/photos/"):
             r2.delete_key(key)
-        cart["veggies"] = [item for item in veggies if item.get("id") != veggie_id]
+        cart["items"] = [item for item in items if item.get("id") != item_id]
 
     _with_state(write, save=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -655,20 +744,25 @@ def place_order(request: Request, body: dict = Body(...)) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     if role == "cart" and own_id != cart_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=WRONG_ROLE)
-    address = _address(body.get("address"))
+    stop_id = body.get("stop_id")
+    if not isinstance(stop_id, str) or not stop_id:
+        raise HTTPException(status_code=400, detail=NEED_STOP)
 
     def write(state: dict) -> dict:
         cart = _find_cart(state, cart_id)
-        if not cart.get("veggies"):
+        if not _stored_items(cart):
             raise HTTPException(status_code=400, detail=NOT_LOADED)
+        stop = next((item for item in _stored_stops(cart) if item.get("id") == stop_id), None)
+        if stop is None:
+            raise HTTPException(status_code=400, detail=NEED_STOP)
         lines = _lines(cart, body.get("lines"))
         order = {
             "id": uuid.uuid4().hex,
             "driver_token": _driver_token(state),
             "cart_id": cart_id,
             "cart_name": cart.get("name"),
-            "schedule": cart.get("schedule"),
-            "address": address,
+            "schedule": stop.get("schedule"),
+            "address": stop.get("address"),
             "lines": lines,
             "status": "open",
             "created_at": datetime.now(timezone.utc).isoformat(),
