@@ -1,4 +1,7 @@
-from app.r2 import R2Settings, ensure_browser_cors
+from botocore.client import Config
+
+from app.r2 import R2Settings, ensure_browser_cors, load_settings
+import app.r2 as r2
 
 
 def _settings() -> R2Settings:
@@ -46,3 +49,30 @@ def test_missing_r2_skips_the_bucket_rule():
         cache_control="",
     )
     ensure_browser_cors(client=Bucket(), settings=blank)
+
+
+def test_bucket_reads_skip_optional_checksums(monkeypatch):
+    monkeypatch.setenv("R2_ACCOUNT_ID", "account")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("R2_BUCKET", "herb-media")
+    monkeypatch.setenv("R2_PUBLIC_BASE_URL", "https://files.example")
+    monkeypatch.setenv("R2_ENDPOINT", "https://account.r2.cloudflarestorage.com")
+    created: dict = {}
+
+    def fake_client(service, **kwargs):
+        created.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(r2.boto3, "client", fake_client)
+    r2._client.cache_clear()
+    r2.client_for(load_settings())
+    r2._client.cache_clear()
+
+    config = created["config"]
+    assert isinstance(config, Config)
+    assert config.signature_version == "s3v4"
+    assert config.s3["addressing_style"] == "path"
+    assert config.request_checksum_calculation == "when_required"
+    assert config.response_checksum_validation == "when_required"
+    assert created["endpoint_url"] == "https://account.r2.cloudflarestorage.com"

@@ -163,13 +163,23 @@ def require_r2() -> R2Settings:
 
 @lru_cache(maxsize=4)
 def _client(endpoint: str, access_key_id: str, secret_access_key: str):
+    # R2 rejects the optional checksum headers boto sends by default. A bucket
+    # read then fails even when the Cloudflare secrets are set. Ask for a
+    # checksum only when the operation requires one, and keep the path-style
+    # URL https://<account>.r2.cloudflarestorage.com/<bucket>/<key>.
     return boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
         region_name="auto",
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 3, "mode": "standard"},
+            s3={"addressing_style": "path"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
 
 
@@ -307,13 +317,15 @@ def read_object(key: str) -> bytes | None:
     settings = require_r2()
     try:
         response = client_for(settings).get_object(Bucket=settings.bucket, Key=key)
+        return response["Body"].read()
     except ClientError as exc:
         code = str(exc.response.get("Error", {}).get("Code", ""))
         http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
         if http_status == 404 or code in {"NoSuchKey", "404", "NotFound"}:
             return None
         _raise_storage_error(exc)
-    return response["Body"].read()
+    except BotoCoreError as exc:
+        _raise_storage_error(exc)
 
 
 def write_object(key: str, body: bytes, *, content_type: str, cache_control: str | None = None) -> None:
