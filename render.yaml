@@ -29,6 +29,10 @@ services:
         sync: false
       - key: BINTER_ADMIN_TOKEN
         sync: false
+      - key: CART_ENTITY_TOKEN
+        sync: false
+      - key: CART_LOADER_TOKEN
+        sync: false
       - key: MONGODB_URL
         sync: false
       - key: MONGODB_DATABASE

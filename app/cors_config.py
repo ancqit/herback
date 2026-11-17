@@ -1,6 +1,6 @@
 """Browser origins allowed to call herback.
 
-herbant, scrap, and binter are the apps on Vercel. Env origins are merged
+herbant, scrap, binter, and cart are the apps on Vercel. Env origins are merged
 with the built-in list, so setting CORS_ORIGINS never drops localhost or the live sites.
 """
 
@@ -17,10 +17,11 @@ DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
     "https://herbant.vercel.app",
     "https://scrap-sooty.vercel.app",
     "https://binter.vercel.app",
+    "https://cart.vercel.app",
 )
 
-# Vercel preview hosts for herbant, scrap, and binter.
-_DEFAULT_ORIGIN_REGEX = r"^https://(?:herbant|scrap|binter)[a-z0-9-]*\.vercel\.app$"
+# Vercel preview hosts for herbant, scrap, binter, and cart.
+_DEFAULT_ORIGIN_REGEX = r"^https://(?:herbant|scrap|binter|cart)[a-z0-9-]*\.vercel\.app$"
 
 
 def load_cors_origins() -> list[str]:
