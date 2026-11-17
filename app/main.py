@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,7 @@ from .room import router as room_router
 from .scrap_portal import router as scrap_router
 
 _openapi_enabled = os.getenv("OPENAPI_ENABLED", "true").lower() in {"1", "true", "yes"}
+_log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _allow_browser_uploads(_app: FastAPI):
@@ -24,7 +26,7 @@ async def _allow_browser_uploads(_app: FastAPI):
         try:
             ensure_browser_cors()
         except Exception:
-            pass
+            _log.exception("The bucket CORS rule was not saved")
     yield
 
 
