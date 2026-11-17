@@ -92,6 +92,38 @@ Keys stay under `binter/`. The server chooses them. Nothing lands in `herb/`, `2
 
 The R2 bucket CORS policy must allow the binter Vercel origin to PUT from the browser, the same way it allows herbant. Include `https://binter.vercel.app` and `http://localhost:5173`. Without that, `POST /binter/upload-url` succeeds and the browser PUT fails.
 
+## Cart
+
+herback is the holder for the vegetable cart portal. The portal calls `/api/cart/...` and Vercel strips `/api`, so these routes are mounted at `/cart` and `/api/cart`.
+
+Two numbers are set on this service. The operator fills them on Render. A blank value keeps that door shut. There is no default password.
+
+| Number | Role |
+| --- | --- |
+| `CART_ENTITY_TOKEN` | The entity. Sees carts that already have vegetables. |
+| `CART_LOADER_TOKEN` | The desk. A small token field creates a cart. |
+
+A cart token is typed by the loader. That token is the cart. Opening it shows the schedule and the vegetables. Choosing vegetables and an address issues a driver token. The driver enters that token and sees the address.
+
+Fresh photographs go to the same R2 bucket. The server chooses keys under `cart/photos/`. Nothing lands in `herb/`, `2001/`, `binter/`, or `shorts/`. State is `cart/state.json`. A public cart does not include the cart token or the object key. The photograph URL is the public CDN URL. Orders older than 30 days drop on the next read or write. Photographs stay with the cart until the vegetable or the cart is removed.
+
+| Route | What it does |
+| --- | --- |
+| `POST /cart/login` | Body `{ token }`. Entity, loader, a cart token, or a driver token. |
+| `POST /cart/upload-url` | Loader. Presigned PUT for a fresh photograph. |
+| `GET /cart/carts` | Entity sees loaded carts. Loader sees every cart. A cart token sees that cart. |
+| `POST /cart/carts` | Loader creates a cart from a token, a name, and a schedule. |
+| `GET /cart/carts/{id}` | One cart, with prices and photograph URLs. |
+| `POST /cart/carts/{id}/schedule` | Loader replaces the schedule. |
+| `POST /cart/carts/{id}/veggies` | Loader adds a vegetable, a price, and a photograph. |
+| `DELETE /cart/carts/{id}/veggies/{veggie_id}` | Loader removes the vegetable and its photograph. |
+| `DELETE /cart/carts/{id}` | Loader removes the cart and its photographs. |
+| `POST /cart/orders` | Entity or the cart token. Address plus vegetables. Returns the driver token. |
+| `GET /cart/slip` | Driver. The address, the schedule, and the vegetables. |
+| `POST /cart/orders/arrive` | Driver marks the address arrived. |
+
+The bucket CORS policy must allow the cart origin to PUT, the same way it allows herbant. Include `https://cart.vercel.app` and `http://localhost:4200`.
+
 ## Cloudflare R2
 
 1. In the Cloudflare dashboard open **R2 → Create bucket**. Name it `herb-media` (or another name you will paste into `R2_BUCKET`). Pick a location close to the centre if Cloudflare asks. This name is not the public hostname.
@@ -104,6 +136,7 @@ The R2 bucket CORS policy must allow the binter Vercel origin to PUT from the br
     "AllowedOrigins": [
       "https://herbant.vercel.app",
       "https://binter.vercel.app",
+      "https://cart.vercel.app",
       "http://localhost:4200",
       "http://localhost:5173"
     ],
@@ -136,11 +169,11 @@ The API talks to R2 as S3. You do not create an AWS account, and you do not set 
 openssl rand -hex 32
 ```
 
-3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, and `https://binter.vercel.app`.
+3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, `https://binter.vercel.app`, and `https://cart.vercel.app`.
 4. Deploy. Open `https://<your-service>.onrender.com/health`. You want:
 
 ```json
-{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true,"binter_notifier_configured":true,"binter_receiver_configured":true,"binter_admin_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
+{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true,"binter_notifier_configured":true,"binter_receiver_configured":true,"binter_admin_configured":true,"cart_entity_configured":true,"cart_loader_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
 ```
 
 `r2_missing` lists variable **names** only. A missing name means that slot is empty in Render. Edit the env var and redeploy if the start command already captured the old environment. Render injects env at boot.
@@ -161,6 +194,8 @@ openssl rand -hex 32
 | `BINTER_NOTIFIER_TOKEN` | Render env, local `.env` | Number the authority gives the person who raises a collect |
 | `BINTER_RECEIVER_TOKEN` | Render env, local `.env` | Number the authority gives the vehicle |
 | `BINTER_ADMIN_TOKEN` | Render env, local `.env` | Number for the weekly and monthly sheet |
+| `CART_ENTITY_TOKEN` | Render env, local `.env` | Number for the entity who opens loaded carts |
+| `CART_LOADER_TOKEN` | Render env, local `.env` | Number for the desk that creates carts |
 | `MONGODB_URL` | Render env, local `.env` | Contains the database username and password |
 | `MONGODB_DATABASE` | same | `herb` unless you choose another name on this cluster |
 | `.env` | your machine only | `.gitignore` already excludes it |

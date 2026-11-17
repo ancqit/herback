@@ -523,12 +523,15 @@ def test_cors_names_binter(monkeypatch: pytest.MonkeyPatch):
         "https://herbant.vercel.app",
         "https://scrap-sooty.vercel.app",
         "https://binter.vercel.app",
+        "https://cart.vercel.app",
     ):
         assert origin in origins
-    assert load_cors_origin_regex() == r"^https://(?:herbant|scrap|binter)[a-z0-9-]*\.vercel\.app$"
+    assert load_cors_origin_regex() == r"^https://(?:herbant|scrap|binter|cart)[a-z0-9-]*\.vercel\.app$"
     pattern = re.compile(load_cors_origin_regex() or "")
     assert pattern.fullmatch("https://binter.vercel.app")
     assert pattern.fullmatch("https://binter-git-abc.vercel.app")
+    assert pattern.fullmatch("https://cart.vercel.app")
+    assert pattern.fullmatch("https://cart-git-abc.vercel.app")
     assert pattern.fullmatch("https://scrap-sooty.vercel.app")
     assert pattern.fullmatch("https://herbant.vercel.app")
     assert not pattern.fullmatch("https://evil.vercel.app")
