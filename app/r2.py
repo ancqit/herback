@@ -339,6 +339,31 @@ def presign_put_key(key: str, content_type: str) -> str:
     )
 
 
+def ensure_browser_cors(client=None, settings: R2Settings | None = None) -> None:
+    """Let scrap, binter, and herbant PUT a file straight to the bucket.
+
+    A browser PUT sends a Content-Type preflight. Without a bucket rule the
+    browser reports that as "Failed to fetch" before any status comes back.
+    """
+    settings = settings or load_settings()
+    if not settings.configured:
+        return
+    (client or client_for(settings)).put_bucket_cors(
+        Bucket=settings.bucket,
+        CORSConfiguration={
+            "CORSRules": [
+                {
+                    "AllowedOrigins": ["*"],
+                    "AllowedMethods": ["GET", "PUT", "HEAD", "POST"],
+                    "AllowedHeaders": ["*"],
+                    "ExposeHeaders": ["ETag"],
+                    "MaxAgeSeconds": 86400,
+                }
+            ]
+        },
+    )
+
+
 def delete_key(key: str) -> None:
     settings = require_r2()
     try:
