@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
@@ -10,11 +11,21 @@ from .binter_portal import router as binter_router
 from .cors_config import load_cors_origin_regex, load_cors_origins
 from .database import load_settings, mongo_configured, mongo_host, mongo_missing_env, ping
 from .media import router as media_router
-from .r2 import r2_configured, r2_missing_env
+from .r2 import ensure_browser_cors, r2_configured, r2_missing_env
 from .room import router as room_router
 from .scrap_portal import router as scrap_router
 
 _openapi_enabled = os.getenv("OPENAPI_ENABLED", "true").lower() in {"1", "true", "yes"}
+
+@asynccontextmanager
+async def _allow_browser_uploads(_app: FastAPI):
+    if not os.getenv("PYTEST_CURRENT_TEST"):
+        try:
+            ensure_browser_cors()
+        except Exception:
+            pass
+    yield
+
 
 app = FastAPI(
     title="Herback",
@@ -23,6 +34,7 @@ app = FastAPI(
     docs_url="/docs" if _openapi_enabled else None,
     redoc_url=None,
     openapi_url="/openapi.json" if _openapi_enabled else None,
+    lifespan=_allow_browser_uploads,
 )
 
 app.add_middleware(
