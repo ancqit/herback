@@ -1,5 +1,7 @@
 """Repeated portal flows. Each step is one request, and a repeat does not invent another."""
 
+import copy
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,7 @@ client = TestClient(app)
 class Bucket:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.forms: dict[str, dict] = {}
         self.writes = 0
         self.reads = 0
 
@@ -20,8 +23,15 @@ class Bucket:
         return self.objects.get(key)
 
     def write_object(self, key: str, body: bytes, **_kwargs) -> None:
-        self.writes += 1
         self.objects[key] = body
+
+    def load_form(self, name: str) -> dict | None:
+        form = self.forms.get(name)
+        return None if form is None else copy.deepcopy(form)
+
+    def save_form(self, name: str, form: dict) -> None:
+        self.writes += 1
+        self.forms[name] = copy.deepcopy(form)
 
     def delete_key(self, key: str) -> None:
         self.objects.pop(key, None)
@@ -108,6 +118,8 @@ def bucket(monkeypatch: pytest.MonkeyPatch) -> Bucket:
         monkeypatch.setattr(f"{module}.r2.presign_put_key", store.presign_put_key)
         monkeypatch.setattr(f"{module}.r2.public_url", store.public_url)
         monkeypatch.setattr(f"{module}.r2.require_r2", store.require_r2)
+    monkeypatch.setattr("app.forms.load_form", store.load_form)
+    monkeypatch.setattr("app.forms.save_form", store.save_form)
     return store
 
 

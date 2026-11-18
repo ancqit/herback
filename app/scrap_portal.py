@@ -1,14 +1,13 @@
-"""Scrap cards stored in herback's R2 bucket.
+"""Scrap cards. Pictures and documents live in R2. The card list lives in Mongo.
 
-The scrap portal calls these routes. Pictures, documents, and the card list
-live under ``2001/``. herbant media stays under ``herb/``. Credentials are the
-same ``R2_*`` variables. ``UPLOAD_TOKEN`` is the desk login. ``2001`` is read-only.
+The scrap portal calls these routes. File keys stay under ``2001/``. herbant
+media stays under ``herb/``. Each picture and document on a card keeps its
+CDN URL. ``UPLOAD_TOKEN`` is the desk login. ``2001`` is read-only.
 """
 
 from __future__ import annotations
 
 import hmac
-import json
 import os
 import re
 import uuid
@@ -16,7 +15,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response, status
 
-from . import r2
+from . import forms, r2
 
 router = APIRouter(prefix="/scrap", tags=["scrap"])
 
@@ -77,26 +76,15 @@ def _public_key(raw: object) -> str:
 
 
 def _load() -> list[dict]:
-    r2.require_r2()
-    raw = r2.read_object(CATALOG_KEY)
-    if not raw:
+    form = forms.adopt_bucket("scrap", CATALOG_KEY, {"scraps": []}, forms.scrap_form)
+    scraps = form.get("scraps")
+    if not isinstance(scraps, list):
         return []
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, dict)]
+    return [item for item in scraps if isinstance(item, dict)]
 
 
 def _save(scraps: list[dict]) -> None:
-    r2.write_object(
-        CATALOG_KEY,
-        json.dumps(scraps).encode(),
-        content_type="application/json",
-        cache_control="no-store",
-    )
+    forms.save_form("scrap", {"scraps": scraps})
 
 
 def _files(raw: object, label: str, limit: int) -> list[dict]:
@@ -114,12 +102,14 @@ def _files(raw: object, label: str, limit: int) -> list[dict]:
             raise HTTPException(status_code=400, detail=message)
         filename = str(entry.get("filename") or "file").split("/")[-1].split("\\")[-1].strip()[:80] or "file"
         files.append(
-            {
-                "object_key": key,
-                "url": r2.public_url(key),
-                "content_type": content_type,
-                "filename": filename,
-            }
+            forms.remember_cdn(
+                {
+                    "object_key": key,
+                    "content_type": content_type,
+                    "filename": filename,
+                },
+                key,
+            )
         )
     return files
 
@@ -172,6 +162,7 @@ def upload_url(request: Request, body: dict = Body(...)) -> dict:
     return {
         "upload_url": url,
         "url": url,
+        "cdn": r2.public_url(key),
         "object_key": key,
         "key": key,
         "content_type": content_type,

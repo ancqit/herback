@@ -1,17 +1,17 @@
-"""Vegetable carts stored in herback's R2 bucket.
+"""Vegetable carts.
 
-The cart portal calls these routes. Fresh photographs and the cart list live
-under ``cart/``. herbant stays under ``herb/``, scrap under ``2001/``, and
-binter under ``binter/``. ``CART_ENTITY_TOKEN`` and ``CART_LOADER_TOKEN`` are
-the two doors. A blank value keeps that door shut. A cart token is the cart.
-A driver token is issued when vegetables or other things are chosen
-for one of the cart's addresses. Each address has its own schedule.
+Fresh photographs live in R2 under ``cart/photos/``. The cart form lives in
+Mongo and keeps each photograph's CDN URL. herbant stays under ``herb/``,
+scrap under ``2001/``, and binter under ``binter/``. ``CART_ENTITY_TOKEN`` and
+``CART_LOADER_TOKEN`` are the two doors. A blank value keeps that door shut.
+A cart token is the cart. A driver token is issued when vegetables or other
+things are chosen for one of the cart's addresses. Each address has its own
+schedule.
 """
 
 from __future__ import annotations
 
 import hmac
-import json
 import os
 import re
 import secrets
@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response, status
 
-from . import r2
+from . import forms, r2
 
 router = APIRouter(prefix="/cart", tags=["cart"])
 
@@ -234,11 +234,14 @@ def _photo(raw: object) -> dict:
         raise HTTPException(status_code=400, detail=INVALID_KEY)
     if not key.endswith(PHOTO_TYPES[content_type]):
         raise HTTPException(status_code=400, detail=INVALID_KEY)
-    return {
-        "object_key": key,
-        "content_type": content_type,
-        "filename": _filename(raw.get("filename"), f"photo{PHOTO_TYPES[content_type]}"),
-    }
+    return forms.remember_cdn(
+        {
+            "object_key": key,
+            "content_type": content_type,
+            "filename": _filename(raw.get("filename"), f"photo{PHOTO_TYPES[content_type]}"),
+        },
+        key,
+    )
 
 
 def _empty_state() -> dict:
@@ -246,35 +249,11 @@ def _empty_state() -> dict:
 
 
 def _read_state() -> dict:
-    r2.require_r2()
-    raw = r2.read_object(STATE_KEY)
-    if not raw:
-        return _empty_state()
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return _empty_state()
-    if not isinstance(parsed, dict):
-        return _empty_state()
-    carts = parsed.get("carts")
-    orders = parsed.get("orders")
-    if not isinstance(carts, list):
-        carts = []
-    if not isinstance(orders, list):
-        orders = []
-    return {
-        "carts": [item for item in carts if isinstance(item, dict)],
-        "orders": [item for item in orders if isinstance(item, dict)],
-    }
+    return forms.adopt_bucket("cart", STATE_KEY, _empty_state(), forms.cart_form)
 
 
 def _write_state(state: dict) -> None:
-    r2.write_object(
-        STATE_KEY,
-        json.dumps({"carts": state["carts"], "orders": state["orders"]}).encode(),
-        content_type="application/json",
-        cache_control="no-store",
-    )
+    forms.save_form("cart", {"carts": state["carts"], "orders": state["orders"]})
 
 
 def _parse_time(value: object) -> datetime | None:
@@ -371,9 +350,8 @@ def _find_order(state: dict, order_id: str) -> dict:
 
 
 def _public_photo(photo: dict) -> dict:
-    key = str(photo.get("object_key") or "")
     return {
-        "url": r2.public_url(key),
+        "url": forms.playback_url(photo),
         "content_type": str(photo.get("content_type") or ""),
         "filename": str(photo.get("filename") or ""),
     }
@@ -567,6 +545,7 @@ def upload_url(request: Request, body: dict = Body(...)) -> dict:
     upload = r2.presign_put_key(key, content_type)
     return {
         "upload_url": upload,
+        "cdn": r2.public_url(key),
         "object_key": key,
         "content_type": content_type,
         "headers": {"content-type": content_type},

@@ -1,5 +1,6 @@
-"""Binter portal stores collects in herback's R2 bucket. No network."""
+"""Binter collects live in Mongo with CDN URLs. Photos and clips stay in R2. No network."""
 
+import copy
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,7 @@ KEY_RE = {
 class Bucket:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.forms: dict[str, dict] = {}
         self.signed: list[str] = []
         self.deleted: list[str] = []
 
@@ -51,6 +53,13 @@ class Bucket:
     def require_r2(self) -> None:
         return None
 
+    def load_form(self, name: str) -> dict | None:
+        form = self.forms.get(name)
+        return None if form is None else copy.deepcopy(form)
+
+    def save_form(self, name: str, form: dict) -> None:
+        self.forms[name] = copy.deepcopy(form)
+
 
 def _install(monkeypatch: pytest.MonkeyPatch) -> Bucket:
     bucket = Bucket()
@@ -63,6 +72,8 @@ def _install(monkeypatch: pytest.MonkeyPatch) -> Bucket:
     monkeypatch.setattr("app.binter_portal.r2.presign_put_key", bucket.presign_put_key)
     monkeypatch.setattr("app.binter_portal.r2.public_url", bucket.public_url)
     monkeypatch.setattr("app.binter_portal.r2.require_r2", bucket.require_r2)
+    monkeypatch.setattr("app.forms.load_form", bucket.load_form)
+    monkeypatch.setattr("app.forms.save_form", bucket.save_form)
     return bucket
 
 
@@ -127,11 +138,11 @@ def _collect(label: str = "North  yard, #2/B", bucket: str = "ferrous", clip: bo
 
 
 def _state(bucket: Bucket) -> dict:
-    return json.loads(bucket.objects["binter/state.json"])
+    return copy.deepcopy(bucket.forms["binter"])
 
 
 def _write_state(bucket: Bucket, state: dict) -> None:
-    bucket.objects["binter/state.json"] = json.dumps(state).encode()
+    bucket.forms["binter"] = copy.deepcopy(state)
 
 
 def test_three_logins_and_a_bad_login(monkeypatch: pytest.MonkeyPatch):
@@ -198,6 +209,7 @@ def test_upload_keys_stay_under_binter_and_a_clip_rejects_an_image(monkeypatch: 
     body = photo.json()
     assert set(body) == {
         "upload_url",
+        "cdn",
         "object_key",
         "content_type",
         "headers",
@@ -205,6 +217,7 @@ def test_upload_keys_stay_under_binter_and_a_clip_rejects_an_image(monkeypatch: 
         "max_bytes",
         "max_seconds",
     }
+    assert body["cdn"] == f"https://media.example/{body['object_key']}"
     assert KEY_RE["photo"].fullmatch(body["object_key"])
     assert body["object_key"].startswith("binter/")
     assert "herb/" not in body["object_key"]
@@ -293,7 +306,9 @@ def test_notifier_creates_a_collect_and_receiver_without_papers_cannot_accept(mo
     assert set(created["photo"]) == {"url", "content_type", "filename"}
     assert created["photo"]["url"].startswith("https://media.example/binter/photos/")
     assert "object_key" not in json.dumps(created)
-    assert "binter/state.json" in bucket.objects
+    stored = bucket.forms["binter"]["requests"][0]["photo"]
+    assert stored["cdn"] == created["photo"]["url"]
+    assert stored["cdn"].startswith("https://media.example/binter/photos/")
 
     refused = client.post(f"/binter/requests/{created['id']}/accept", headers=_auth(RECEIVER, VEHICLE))
     assert refused.status_code == 400

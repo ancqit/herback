@@ -1,7 +1,7 @@
-"""Sunskriti metals-and-glass collects stored in herback's R2 bucket.
+"""Sunskriti metals-and-glass collects.
 
-The binter portal calls these routes. Photographs, clips, papers, and the
-collect list live under ``binter/``. herbant media stays under ``herb/`` and
+Photographs, clips, and papers live in R2 under ``binter/``. The collect form
+lives in Mongo and keeps each CDN URL. herbant media stays under ``herb/`` and
 scrap stays under ``2001/``. ``BINTER_NOTIFIER_TOKEN``, ``BINTER_RECEIVER_TOKEN``,
 and ``BINTER_ADMIN_TOKEN`` are the three doors. A blank value keeps that door shut.
 """
@@ -9,7 +9,6 @@ and ``BINTER_ADMIN_TOKEN`` are the three doors. A blank value keeps that door sh
 from __future__ import annotations
 
 import hmac
-import json
 import os
 import re
 import secrets
@@ -20,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, HTTPException, Request, status
 
-from . import r2
+from . import forms, r2
 
 router = APIRouter(prefix="/binter", tags=["binter"])
 
@@ -245,11 +244,14 @@ def _media(kind: str, raw: object) -> dict:
         raise HTTPException(status_code=400, detail="invalid key")
     if not key.endswith(_type_table(kind)[content_type]):
         raise HTTPException(status_code=400, detail="invalid key")
-    return {
-        "object_key": key,
-        "content_type": content_type,
-        "filename": _filename(raw.get("filename"), f"{kind}{_type_table(kind)[content_type]}"),
-    }
+    return forms.remember_cdn(
+        {
+            "object_key": key,
+            "content_type": content_type,
+            "filename": _filename(raw.get("filename"), f"{kind}{_type_table(kind)[content_type]}"),
+        },
+        key,
+    )
 
 
 def _empty_state() -> dict:
@@ -257,35 +259,11 @@ def _empty_state() -> dict:
 
 
 def _read_state() -> dict:
-    r2.require_r2()
-    raw = r2.read_object(STATE_KEY)
-    if not raw:
-        return _empty_state()
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return _empty_state()
-    if not isinstance(parsed, dict):
-        return _empty_state()
-    profiles = parsed.get("profiles")
-    requests = parsed.get("requests")
-    if not isinstance(profiles, dict):
-        profiles = {}
-    if not isinstance(requests, list):
-        requests = []
-    return {
-        "profiles": {str(key): value for key, value in profiles.items() if isinstance(value, dict)},
-        "requests": [item for item in requests if isinstance(item, dict)],
-    }
+    return forms.adopt_bucket("binter", STATE_KEY, _empty_state(), forms.binter_form)
 
 
 def _write_state(state: dict) -> None:
-    r2.write_object(
-        STATE_KEY,
-        json.dumps({"profiles": state["profiles"], "requests": state["requests"]}).encode(),
-        content_type="application/json",
-        cache_control="no-store",
-    )
+    forms.save_form("binter", {"profiles": state["profiles"], "requests": state["requests"]})
 
 
 def _parse_time(value: object) -> datetime | None:
@@ -403,7 +381,7 @@ def _public_media(media: object) -> dict | None:
     if not isinstance(key, str) or not key:
         return None
     return {
-        "url": r2.public_url(key),
+        "url": forms.playback_url(media),
         "content_type": str(media.get("content_type") or ""),
         "filename": str(media.get("filename") or ""),
     }
@@ -523,6 +501,7 @@ def upload_url(request: Request, body: dict = Body(...)) -> dict:
         max_seconds = None
     return {
         "upload_url": upload,
+        "cdn": r2.public_url(key),
         "object_key": key,
         "content_type": content_type,
         "headers": {"content-type": content_type},

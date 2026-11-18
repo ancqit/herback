@@ -2,6 +2,8 @@
 
 The portal keeps one picture in memory so the screens stay quick. This collection
 is the dump. A room keeps the newest 24 pictures; older dumps are removed.
+A picture or video on the dump keeps its CDN URL, the same way junctionBack
+stores `cdn` on a product.
 """
 
 from __future__ import annotations
@@ -57,6 +59,22 @@ def _require_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(centre, dict) or not isinstance(centre.get("name"), str):
         raise HTTPException(status_code=400, detail="snapshot centre is required")
     return raw
+
+
+def stamp_cdn(value: Any) -> None:
+    """Copy a stored media URL onto `cdn` so playback does not fetch the object."""
+    if isinstance(value, dict):
+        url = value.get("url")
+        if not isinstance(url, str) or not url.startswith("http"):
+            url = value.get("public_url")
+        key = value.get("object_key") or value.get("objectKey")
+        if isinstance(url, str) and url.startswith("http") and isinstance(key, str) and key:
+            value["cdn"] = url
+        for item in value.values():
+            stamp_cdn(item)
+    elif isinstance(value, list):
+        for item in value:
+            stamp_cdn(item)
 
 
 def remember_dump(collection, room: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +154,7 @@ def _row(stop: object, audience: str, room: str) -> dict[str, str] | None:
 def save_room(payload: RoomDump) -> dict[str, str | bool]:
     collection = snapshots()
     snapshot = _require_snapshot(payload.snapshot)
+    stamp_cdn(snapshot)
     return remember_dump(collection, payload.room.strip(), snapshot)
 
 
