@@ -172,7 +172,7 @@ openssl rand -hex 32
 ```
 
 3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, `https://binter.vercel.app`, `https://bin.junction.monster`, and `https://cart.vercel.app`. On boot, herback writes that same list onto the bucket, with `content-type` allowed, so a presigned PUT from binter passes the browser preflight.
-4. Deploy. Open `https://<your-service>.onrender.com/health`. You want:
+4. Deploy. Open `https://herback-1.onrender.com/health`. You want:
 
 ```json
 {"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"bucket_cors_saved":true,"bucket_cors_error":"","api_key_configured":true,"binter_notifier_configured":true,"binter_receiver_configured":true,"binter_admin_configured":true,"cart_entity_configured":true,"cart_loader_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
@@ -209,7 +209,7 @@ openssl rand -hex 32
 Presign, then PUT the bytes to `upload_url` with the returned `Content-Type`:
 
 ```bash
-curl -s https://<your-service>.onrender.com/media/sign \
+curl -s https://herback-1.onrender.com/media/sign \
   -H "X-Herb-Key: $HERB_API_KEY" \
   -H "content-type: application/json" \
   -d '{"kind":"image","content_type":"image/jpeg","filename":"shelf.jpg"}'
