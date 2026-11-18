@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from pymongo import MongoClient
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 _UNSET_URL = "mongodb://invalid:27017"
 
@@ -93,4 +94,29 @@ def get_database() -> Database:
 
 
 def ping() -> None:
+    """Same check junctionBack uses before it treats the cluster as up: `ping`."""
     get_database().command("ping")
+
+
+def mongo_ok() -> bool:
+    """True when the cluster answers ping. A miss stays false and does not raise.
+
+    The status probe uses a short wait so a quiet cluster does not hold Render's
+    liveness check. The pooled client keeps the longer timeout for real reads.
+    """
+    if not mongo_configured():
+        return False
+    settings = load_settings()
+    client = MongoClient(
+        settings.url,
+        serverSelectionTimeoutMS=2_000,
+        connectTimeoutMS=2_000,
+        retryWrites=True,
+    )
+    try:
+        client[settings.database].command("ping")
+        return True
+    except PyMongoError:
+        return False
+    finally:
+        client.close()
