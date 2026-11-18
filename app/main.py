@@ -13,7 +13,7 @@ from .cart_portal import router as cart_router
 from .cors_config import load_cors_origin_regex, load_cors_origins
 from .database import load_settings, mongo_configured, mongo_host, mongo_missing_env, ping
 from .media import router as media_router
-from .r2 import ensure_browser_cors, r2_configured, r2_missing_env
+from .r2 import bucket_cors, ensure_browser_cors, r2_configured, r2_missing_env
 from .room import router as room_router
 from .scrap_portal import router as scrap_router
 
@@ -68,6 +68,8 @@ def health() -> dict[str, str | bool | list[str]]:
         "service": "herback",
         "r2_configured": r2_configured(),
         "r2_missing": r2_missing_env(),
+        "bucket_cors_saved": bucket_cors["saved"],
+        "bucket_cors_error": bucket_cors["error"],
         "api_key_configured": bool((os.getenv("HERB_API_KEY") or "").strip()),
         "binter_notifier_configured": bool((os.getenv("BINTER_NOTIFIER_TOKEN") or "").strip()),
         "binter_receiver_configured": bool((os.getenv("BINTER_RECEIVER_TOKEN") or "").strip()),

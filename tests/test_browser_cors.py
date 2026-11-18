@@ -17,7 +17,8 @@ def _settings() -> R2Settings:
     )
 
 
-def test_browser_uploads_are_allowed_from_any_portal_origin():
+def test_browser_uploads_are_allowed_from_any_portal_origin(monkeypatch):
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
     calls = []
 
     class Bucket:
@@ -29,8 +30,12 @@ def test_browser_uploads_are_allowed_from_any_portal_origin():
     rule = calls[0]["CORSConfiguration"]["CORSRules"][0]
     assert calls[0]["Bucket"] == "sunskriti"
     assert "PUT" in rule["AllowedMethods"]
-    assert "*" in rule["AllowedOrigins"]
-    assert "*" in rule["AllowedHeaders"]
+    assert "https://bin.junction.monster" in rule["AllowedOrigins"]
+    assert "https://binter.vercel.app" in rule["AllowedOrigins"]
+    assert "content-type" in rule["AllowedHeaders"]
+    assert "Content-Type" in rule["AllowedHeaders"]
+    assert "*" not in rule["AllowedOrigins"]
+    assert "*" not in rule["AllowedHeaders"]
 
 
 def test_missing_r2_skips_the_bucket_rule():

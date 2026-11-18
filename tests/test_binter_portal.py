@@ -523,6 +523,7 @@ def test_cors_names_binter(monkeypatch: pytest.MonkeyPatch):
         "https://herbant.vercel.app",
         "https://scrap-sooty.vercel.app",
         "https://binter.vercel.app",
+        "https://bin.junction.monster",
         "https://cart.vercel.app",
     ):
         assert origin in origins

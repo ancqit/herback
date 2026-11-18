@@ -17,6 +17,7 @@ DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
     "https://herbant.vercel.app",
     "https://scrap-sooty.vercel.app",
     "https://binter.vercel.app",
+    "https://bin.junction.monster",
     "https://cart.vercel.app",
 )
 
