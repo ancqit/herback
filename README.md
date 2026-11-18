@@ -90,7 +90,7 @@ Keys stay under `binter/`. The server chooses them. Nothing lands in `herb/`, `2
 | `GET /binter/sheet?span=week` | Admin rows whose `created_at` is in the current week. Week starts Monday 00:00, Asia/Kolkata. |
 | `GET /binter/sheet?span=month` | Admin rows for the current month. The month starts on the 1st at 00:00, Asia/Kolkata. |
 
-The R2 bucket CORS policy must allow the binter Vercel origin to PUT from the browser, the same way it allows herbant. Include `https://binter.vercel.app` and `http://localhost:5173`. Without that, `POST /binter/upload-url` succeeds and the browser PUT fails.
+The R2 bucket CORS policy must name the binter site. Include `https://bin.junction.monster`, `https://binter.vercel.app`, and `http://localhost:5173`, and list `content-type` rather than `*`. Without that, `POST /binter/upload-url` succeeds and the browser PUT fails.
 
 ## Cart
 
@@ -135,6 +135,7 @@ The bucket CORS policy must allow the cart origin to PUT, the same way it allows
 [
   {
     "AllowedOrigins": [
+      "https://bin.junction.monster",
       "https://herbant.vercel.app",
       "https://binter.vercel.app",
       "https://cart.vercel.app",
@@ -142,7 +143,7 @@ The bucket CORS policy must allow the cart origin to PUT, the same way it allows
       "http://localhost:5173"
     ],
     "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["Content-Type"],
+    "AllowedHeaders": ["content-type", "Content-Type"],
     "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
@@ -170,11 +171,11 @@ The API talks to R2 as S3. You do not create an AWS account, and you do not set 
 openssl rand -hex 32
 ```
 
-3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, `https://binter.vercel.app`, and `https://cart.vercel.app`.
+3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, `https://binter.vercel.app`, `https://bin.junction.monster`, and `https://cart.vercel.app`. On boot, herback writes that same list onto the bucket, with `content-type` allowed, so a presigned PUT from binter passes the browser preflight.
 4. Deploy. Open `https://<your-service>.onrender.com/health`. You want:
 
 ```json
-{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"api_key_configured":true,"binter_notifier_configured":true,"binter_receiver_configured":true,"binter_admin_configured":true,"cart_entity_configured":true,"cart_loader_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
+{"status":"ok","service":"herback","r2_configured":true,"r2_missing":[],"bucket_cors_saved":true,"bucket_cors_error":"","api_key_configured":true,"binter_notifier_configured":true,"binter_receiver_configured":true,"binter_admin_configured":true,"cart_entity_configured":true,"cart_loader_configured":true,"mongo_configured":true,"mongo_missing":[],"mongo_host":"YOUR_CLUSTER.mongodb.net"}
 ```
 
 `r2_missing` lists variable **names** only. A missing name means that slot is empty in Render. Edit the env var and redeploy if the start command already captured the old environment. Render injects env at boot.

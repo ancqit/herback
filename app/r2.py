@@ -19,6 +19,8 @@ from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException, status
 
+from .cors_config import load_cors_origins
+
 MediaKind = Literal["image", "document", "audio", "video"]
 MediaPlace = Literal["schedule", "coach", "centre"]
 
@@ -351,25 +353,53 @@ def presign_put_key(key: str, content_type: str) -> str:
     )
 
 
-def ensure_browser_cors(client=None, settings: R2Settings | None = None) -> None:
-    """Let scrap, binter, and herbant PUT a file straight to the bucket.
+# R2 does not treat "*" like S3. A Content-Type PUT preflight only gets
+# Access-Control-Allow-Origin when the origin and the header are listed.
+bucket_cors = {"saved": False, "error": ""}
+_BROWSER_HEADERS = (
+    "content-type",
+    "Content-Type",
+    "content-length",
+    "Content-Length",
+    "cache-control",
+    "Cache-Control",
+)
 
-    A browser PUT sends a Content-Type preflight. Without a bucket rule the
-    browser reports that as "Failed to fetch" before any status comes back.
+
+def ensure_browser_cors(client=None, settings: R2Settings | None = None) -> None:
+    """Let the portals PUT a file straight to the bucket.
+
+    A browser PUT sends a Content-Type preflight. Without a matching bucket
+    rule the browser reports that as "Failed to fetch" before any status
+    comes back.
     """
     settings = settings or load_settings()
+    bucket_cors["saved"] = False
+    bucket_cors["error"] = ""
     if not settings.configured:
         return
-    (client or client_for(settings)).put_bucket_cors(
+    try:
+        _put_browser_cors(client or client_for(settings), settings)
+    except ClientError as exc:
+        bucket_cors["error"] = str(exc.response.get("Error", {}).get("Code", "")) or "ClientError"
+        raise
+    except BotoCoreError:
+        bucket_cors["error"] = "BotoCoreError"
+        raise
+    bucket_cors["saved"] = True
+
+
+def _put_browser_cors(client, settings: R2Settings) -> None:
+    client.put_bucket_cors(
         Bucket=settings.bucket,
         CORSConfiguration={
             "CORSRules": [
                 {
-                    "AllowedOrigins": ["*"],
+                    "AllowedOrigins": load_cors_origins(),
                     "AllowedMethods": ["GET", "PUT", "HEAD", "POST"],
-                    "AllowedHeaders": ["*"],
+                    "AllowedHeaders": list(_BROWSER_HEADERS),
                     "ExposeHeaders": ["ETag"],
-                    "MaxAgeSeconds": 86400,
+                    "MaxAgeSeconds": 3600,
                 }
             ]
         },
