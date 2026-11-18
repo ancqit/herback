@@ -56,6 +56,7 @@ def test_health_lists_missing_names():
     assert body["mongo_configured"] is False
     assert body["mongo_missing"] == ["MONGODB_URL"]
     assert body["mongo_host"] == ""
+    assert body["mongo_ok"] is False
     assert all(isinstance(name, str) and name.isupper() for name in body["r2_missing"])
 
 
