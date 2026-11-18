@@ -96,6 +96,19 @@ def test_dump_round_trip_keeps_schedule_fields(dumps: Collection):
     assert loaded.status_code == 200
     assert loaded.json()["snapshot"]["boardNotes"][0]["body"] == "Quiet hour"
     assert loaded.json()["snapshot"]["added"][0]["products"] == "Snapshot tea"
+    picture["at"] = "2026-11-13T12:05:00.000Z"
+    picture["centre"]["videos"] = [
+        {
+            "objectKey": "herb/videos/centre/abc.mp4",
+            "url": "https://media.example/herb/videos/centre/abc.mp4",
+            "contentType": "video/mp4",
+            "filename": "clip.mp4",
+        }
+    ]
+    filmed = client.post("/api/room", json={"room": "herbalife", "snapshot": picture})
+    assert filmed.status_code == 200
+    video = client.get("/api/room", params={"room": "herbalife"}).json()["snapshot"]["centre"]["videos"][0]
+    assert video["cdn"] == "https://media.example/herb/videos/centre/abc.mp4"
 
     schedules = client.get("/api/schedules", params={"room": "herbalife"}).json()
     assert schedules[0]["audience"] == "admin"

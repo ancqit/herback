@@ -1,4 +1,6 @@
-"""Scrap portal stores cards in herback's R2 bucket. No network."""
+"""Scrap cards live in Mongo with CDN URLs. Pictures stay in R2. No network."""
+
+import copy
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +13,7 @@ client = TestClient(app)
 class Bucket:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.forms: dict[str, dict] = {}
         self.signed: list[str] = []
 
     def read_object(self, key: str) -> bytes | None:
@@ -32,6 +35,13 @@ class Bucket:
     def require_r2(self) -> None:
         return None
 
+    def load_form(self, name: str) -> dict | None:
+        form = self.forms.get(name)
+        return None if form is None else copy.deepcopy(form)
+
+    def save_form(self, name: str, form: dict) -> None:
+        self.forms[name] = copy.deepcopy(form)
+
 
 def _install(monkeypatch: pytest.MonkeyPatch, token: str = "desk-token") -> Bucket:
     bucket = Bucket()
@@ -42,6 +52,8 @@ def _install(monkeypatch: pytest.MonkeyPatch, token: str = "desk-token") -> Buck
     monkeypatch.setattr("app.scrap_portal.r2.presign_put_key", bucket.presign_put_key)
     monkeypatch.setattr("app.scrap_portal.r2.public_url", bucket.public_url)
     monkeypatch.setattr("app.scrap_portal.r2.require_r2", bucket.require_r2)
+    monkeypatch.setattr("app.forms.load_form", bucket.load_form)
+    monkeypatch.setattr("app.forms.save_form", bucket.save_form)
     return bucket
 
 
@@ -86,7 +98,9 @@ def test_creates_lists_and_deletes_a_scrap_in_the_bucket(monkeypatch: pytest.Mon
     assert scrap["portal"] == "2001"
     assert scrap["price"] == 18500
     assert scrap["pictures"][0]["url"] == "https://media.example/2001/scraps/one.jpg"
-    assert "2001/catalog.json" in bucket.objects
+    assert scrap["pictures"][0]["cdn"] == "https://media.example/2001/scraps/one.jpg"
+    assert bucket.forms["scrap"]["scraps"][0]["pictures"][0]["cdn"] == scrap["pictures"][0]["cdn"]
+    assert "2001/catalog.json" not in bucket.objects
 
     listed = client.get("/scrap/scraps")
     assert listed.status_code == 200

@@ -104,6 +104,7 @@ def test_presign_put_is_local(monkeypatch: pytest.MonkeyPatch):
     assert body["object_key"].startswith("herb/images/")
     assert body["object_key"].endswith(".jpg")
     assert body["public_url"] == f"https://media.example/{body['object_key']}"
+    assert body["cdn"] == body["public_url"]
     assert body["upload_method"] == "PUT"
     assert body["content_type"] == "image/jpeg"
     assert body["headers"] == {"Content-Type": "image/jpeg"}

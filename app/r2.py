@@ -280,6 +280,7 @@ def presign_put(
         "object_key": object_key,
         "upload_url": upload_url,
         "public_url": f"{settings.public_base_url}/{object_key}",
+        "cdn": f"{settings.public_base_url}/{object_key}",
         "content_type": content_type,
         "expires_in": settings.sign_expires_seconds,
         "kind": kind,

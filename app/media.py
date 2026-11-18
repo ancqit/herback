@@ -40,6 +40,7 @@ class SignResponse(BaseModel):
     object_key: str
     upload_url: str
     public_url: str
+    cdn: str
     content_type: str
     expires_in: int
     upload_method: Literal["PUT"] = "PUT"

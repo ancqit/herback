@@ -23,6 +23,8 @@ Atlas side, once:
 
 `GET /health` stays up even when the URL is empty, and it reports `mongo_configured` plus `mongo_host` (the cluster host only). `GET /mongo` runs a ping and returns `{"ok":true,"database":"herb","host":"..."}`. A failed ping is 503 and the body does not include the URL.
 
+Pictures and videos stay in the R2 bucket. The form that names them is a document in `portal_forms`, the same idea as junctionBack storing `cdn` on a product. A list reads that document. Playback uses the stored CDN URL, so opening a cart, a scrap card, or a collect does not fetch the object. The browser still PUTs the bytes to R2, and that PUT needs the bucket CORS rule plus a public read host in `R2_PUBLIC_BASE_URL`. An old `catalog.json` or `state.json` is copied into Mongo the first time the bucket answers, and after that the bucket file is left alone.
+
 ## Room snapshots
 
 herbant keeps one picture in memory so moving through the room stays quick. `POST /api/room` stores that picture in `room_snapshots`. `GET /api/room?room=herbalife` returns the newest one. `GET /api/schedules?room=herbalife` reads the schedule days out of that same picture, so a dump does not drop a schedule.
@@ -37,7 +39,7 @@ herback is the holder for the scrap portal. The portal calls `/api/scrap/...` an
 | --- | --- |
 | `POST /scrap/login` | `2001` returns `{ role: "slave" }`. `UPLOAD_TOKEN` returns `{ role: "admin" }`. |
 | `POST /scrap/get-upload-url` | Admin. Presigned PUT under `2001/`. |
-| `GET /scrap/scraps` | Card list from `2001/catalog.json`. |
+| `GET /scrap/scraps` | Card list from Mongo. Each picture and document has its CDN URL. |
 | `POST /scrap/scraps` | Admin. Saves a card into that catalog. |
 | `DELETE /scrap/scraps/{id}` | Admin. Removes the card and its objects. |
 | `GET /scrap/types` | `bikes` plus types already stored. |
@@ -64,13 +66,13 @@ The notifier sends a place label, a bucket, a photograph, and an optional clip. 
 
 Accepting a collect stores the receiver's name and vehicle number. That is when the notifier's Received lamp lights. Only that vehicle can mark the collect done. A second accept is refused. The receiver's list shows open collects plus ones that vehicle accepted which are not done. The notifier and the admin still see done collects.
 
-Thirty days after `created_at`, herback deletes the photo and clip objects and drops the request. Profile documents stay. The sweep runs on every read and write of `binter/state.json`.
+Thirty days after `created_at`, herback deletes the photo and clip objects and drops the request. Profile documents stay. The sweep runs on every read and write of the Mongo form.
 
 Keys stay under `binter/`. The server chooses them. Nothing lands in `herb/`, `2001/`, or `shorts/`.
 
 | Object | Key |
 | --- | --- |
-| State | `binter/state.json` |
+| Form | Mongo `portal_forms`, name `binter`. Photographs and clips keep `cdn`. |
 | Photograph | `binter/photos/<32 hex>.jpg`, `.png`, or `.webp` (8 MB) |
 | Clip | `binter/clips/<32 hex>.mp4`, `.webm`, or `.mov` (20 MB, `max_seconds` 10) |
 | Papers | `binter/documents/<aadhaar|licence|rc>/<32 hex>.jpg`, `.png`, `.webp`, or `.pdf` (8 MB) |
@@ -105,7 +107,7 @@ Two numbers are set on this service. The operator fills them on Render. A blank 
 
 A cart token is typed by the loader. That token is the cart. Creating it records a schedule for each address. The desk then fills a form with vegetables and other things, each with a price and a fresh photograph. Opening the cart shows those addresses and those things. Choosing one address and adding things issues a driver token. The driver enters that token and sees that address and its schedule.
 
-Fresh photographs go to the same R2 bucket. The server chooses keys under `cart/photos/`. Nothing lands in `herb/`, `2001/`, `binter/`, or `shorts/`. State is `cart/state.json`. A public cart does not include the cart token or the object key. The photograph URL is the public CDN URL. Orders older than 30 days drop on the next read or write. Photographs stay with the cart until the thing or the cart is removed.
+Fresh photographs go to the same R2 bucket. The server chooses keys under `cart/photos/`. Nothing lands in `herb/`, `2001/`, `binter/`, or `shorts/`. The cart form is Mongo `portal_forms`, name `cart`. A public cart does not include the cart token or the object key. The photograph URL is the CDN URL saved on the form. Orders older than 30 days drop on the next read or write. Photographs stay with the cart until the thing or the cart is removed.
 
 | Route | What it does |
 | --- | --- |
@@ -217,7 +219,7 @@ curl -s https://herback-1.onrender.com/media/sign \
 
 `kind` is `image` (jpeg, png, webp, gif, 8 MB), `document` (pdf, 15 MB), `audio` (mp3, m4a, aac, wav, webm, 20 MB), or `video`. Video follows junctionBack shorts and jMonster: mp4, webm, and mov, 40 MB, signed PUT with that `Content-Type`. A phone `.m4v` or `application/mp4` is stored as mp4. Keys look like `herb/videos/schedule/<32 hex>.mp4`. `place` is `schedule`, `coach`, or `centre`. The same bucket holds scrap under `2001/` and these files under `herb/`, never under `shorts/`.
 
-The herbant admin pass `1001` can mint the URL (`Authorization: Bearer 1001` or `X-Herb-Key`). `HERB_API_KEY` still works for a caller outside the room. The user pass `2001` cannot sign. `public_url` is the lasting read URL.
+The herbant admin pass `1001` can mint the URL (`Authorization: Bearer 1001` or `X-Herb-Key`). `HERB_API_KEY` still works for a caller outside the room. The user pass `2001` cannot sign. `public_url` and `cdn` are the same lasting read URL. The room dump stores that URL on the picture or video.
 
 `POST /media` accepts a multipart file (`kind` + `file`) and uploads through this server. Use that only when bucket CORS is not ready yet. The presigned PUT is the path to keep.
 
