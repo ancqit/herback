@@ -15,7 +15,7 @@ from .cart_portal import router as cart_router
 from .cors_config import load_cors_origin_regex, load_cors_origins
 from .database import mongo_configured, mongo_host, mongo_missing_env, mongo_probe, prove_connection
 from .media import router as media_router
-from .r2 import bucket_cors, ensure_browser_cors, r2_configured, r2_missing_env
+from .r2 import bucket_cors, bucket_name, ensure_browser_cors, r2_configured, r2_missing_env
 from .room import router as room_router
 from .scrap_portal import router as scrap_router
 
@@ -79,6 +79,7 @@ def health() -> dict[str, str | bool | list[str]]:
         "status": "ok",
         "service": "herback",
         "r2_configured": r2_configured(),
+        "r2_bucket": bucket_name(),
         "r2_missing": r2_missing_env(),
         "bucket_cors_saved": bucket_cors["saved"],
         "bucket_cors_error": bucket_cors["error"],

@@ -137,7 +137,7 @@ The bucket CORS policy must allow the cart origin to PUT, the same way it allows
 
 ## Cloudflare R2
 
-1. In the Cloudflare dashboard open **R2 → Create bucket**. Name it `herb-media` (or another name you will paste into `R2_BUCKET`). Pick a location close to the centre if Cloudflare asks. This name is not the public hostname.
+1. In the Cloudflare dashboard open **R2 → Create bucket**. Name it `scrap`. That name is `R2_BUCKET`. It is not the public hostname. Pick a location close to the centre if Cloudflare asks.
 2. Open the bucket → **Settings → Public access**. Turn on a public read URL. Prefer a custom domain (for example `media.yourdomain`) over the `r2.dev` URL. Copy that origin with no path and no trailing slash into `R2_PUBLIC_BASE_URL`. Public access is read-only. Writes stay on the API token.
 3. Add a **CORS policy** on the bucket so herbant can PUT from the browser. Without this, `POST /media/sign` succeeds and the browser PUT fails.
 
@@ -166,7 +166,7 @@ Add each Vercel preview origin you actually use, or allow `https://herbant-*.ver
 5. **R2 → Overview** shows the account id. That value is `R2_ACCOUNT_ID`. The S3 endpoint is `https://<account id>.r2.cloudflarestorage.com`. Leave `R2_ENDPOINT` empty unless you were given a different endpoint. The jurisdiction endpoint (`https://<account id>.eu.r2.cloudflarestorage.com` and similar) must be set explicitly when the bucket is not in the default location.
 6. **R2 → Manage API tokens → Create API token**.
    - Permission: **Object Read & Write**
-   - Specify bucket: only `herb-media`
+   - Specify bucket: only `scrap`
    - Do not create an Admin Read & Write token for this service
    - Copy **Access Key ID** into `R2_ACCESS_KEY_ID` and **Secret Access Key** into `R2_SECRET_ACCESS_KEY`. The secret is shown once. If you lose it, create a new token and replace both values. Revoke the old token after the new one works.
 

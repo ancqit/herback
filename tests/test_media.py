@@ -37,7 +37,7 @@ def _configure(monkeypatch: pytest.MonkeyPatch, **extra: str) -> None:
     monkeypatch.setenv("R2_ACCOUNT_ID", "abc123")
     monkeypatch.setenv("R2_ACCESS_KEY_ID", "key")
     monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
-    monkeypatch.setenv("R2_BUCKET", "herb-media")
+    monkeypatch.setenv("R2_BUCKET", "scrap")
     monkeypatch.setenv("R2_PUBLIC_BASE_URL", "https://media.example")
     monkeypatch.setenv("HERB_API_KEY", "test-key")
     for name, value in extra.items():
@@ -66,6 +66,7 @@ def test_health_when_configured(monkeypatch: pytest.MonkeyPatch):
 
     body = TestClient(app).get("/health").json()
     assert body["r2_configured"] is True
+    assert body["r2_bucket"] == "scrap"
     assert body["r2_missing"] == []
     assert body["api_key_configured"] is True
 
@@ -110,7 +111,7 @@ def test_presign_put_is_local(monkeypatch: pytest.MonkeyPatch):
     assert body["content_type"] == "image/jpeg"
     assert body["headers"] == {"Content-Type": "image/jpeg"}
     assert "X-Amz-Signature=" in body["upload_url"]
-    assert "herb-media" in body["upload_url"] or "herb-media" in body["upload_url"].lower()
+    assert "/scrap/" in body["upload_url"]
     assert body["max_bytes"] == 8 * 1024 * 1024
 
 
@@ -237,7 +238,7 @@ def test_server_upload_puts_bytes(monkeypatch: pytest.MonkeyPatch):
     body = response.json()
     assert body["object_key"].startswith("herb/documents/")
     assert body["public_url"].endswith(body["object_key"])
-    assert stored["Bucket"] == "herb-media"
+    assert stored["Bucket"] == "scrap"
     assert stored["Key"] == body["object_key"]
     assert stored["Body"] == b"%PDF-1.4"
     assert stored["ContentType"] == "application/pdf"
@@ -252,6 +253,16 @@ def test_cors_keeps_herbant_and_merges_extra(monkeypatch: pytest.MonkeyPatch):
     assert "https://herbant.vercel.app" in origins
     assert "http://localhost:4200" in origins
     assert "https://preview.example" in origins
+
+
+def test_retired_bucket_name_signs_scrap(monkeypatch: pytest.MonkeyPatch):
+    from app.r2 import bucket_name
+
+    assert bucket_name() == "scrap"
+    monkeypatch.setenv("R2_BUCKET", "herb-media")
+    assert bucket_name() == "scrap"
+    monkeypatch.setenv("R2_BUCKET", "scrap")
+    assert bucket_name() == "scrap"
 
 
 def test_endpoint_falls_back_to_account_host(monkeypatch: pytest.MonkeyPatch):

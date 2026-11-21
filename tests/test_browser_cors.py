@@ -60,7 +60,7 @@ def test_bucket_reads_skip_optional_checksums(monkeypatch):
     monkeypatch.setenv("R2_ACCOUNT_ID", "account")
     monkeypatch.setenv("R2_ACCESS_KEY_ID", "key")
     monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
-    monkeypatch.setenv("R2_BUCKET", "herb-media")
+    monkeypatch.setenv("R2_BUCKET", "scrap")
     monkeypatch.setenv("R2_PUBLIC_BASE_URL", "https://files.example")
     monkeypatch.setenv("R2_ENDPOINT", "https://account.r2.cloudflarestorage.com")
     created: dict = {}
