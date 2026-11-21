@@ -133,7 +133,7 @@ Fresh photographs go to the same R2 bucket. The server chooses keys under `cart/
 | `GET /cart/slip` | Driver. The address, its schedule, and the things. |
 | `POST /cart/orders/arrive` | Driver marks the address arrived. |
 
-The bucket CORS policy must allow the cart origin to PUT, the same way it allows herbant. Include `https://cart.vercel.app` and `http://localhost:4200`.
+The bucket CORS policy must allow the cart origin to PUT, the same way it allows herbant. The live cart is `https://cart.junction.blog`. `http://localhost:4200` is the local desk.
 
 ## Cloudflare R2
 
@@ -148,6 +148,7 @@ The bucket CORS policy must allow the cart origin to PUT, the same way it allows
       "https://bin.junction.monster",
       "https://herbant.vercel.app",
       "https://binter.vercel.app",
+      "https://cart.junction.blog",
       "https://cart.vercel.app",
       "http://localhost:4200",
       "http://localhost:5173"
@@ -181,7 +182,7 @@ The API talks to R2 as S3. You do not create an AWS account, and you do not set 
 openssl rand -hex 32
 ```
 
-3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, `https://binter.vercel.app`, `https://bin.junction.monster`, and `https://cart.vercel.app`. On boot, herback writes that same list onto the bucket, with `content-type` allowed, so a presigned PUT from binter passes the browser preflight.
+3. `R2_ENDPOINT` and `CORS_ORIGINS` can stay empty. An empty `R2_ENDPOINT` uses `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. `CORS_ORIGINS` only adds origins on top of the built-in list: `http://localhost:4200`, `http://127.0.0.1:4200`, `http://localhost:5173`, `http://127.0.0.1:5173`, `https://herbant.vercel.app`, `https://scrap-sooty.vercel.app`, `https://binter.vercel.app`, `https://bin.junction.monster`, `https://cart.junction.blog`, and `https://cart.vercel.app`. On boot, herback writes that same list onto the bucket, with `content-type` allowed, so a presigned PUT from binter passes the browser preflight.
 4. Deploy. Open `https://herback-1.onrender.com/health`. You want:
 
 ```json

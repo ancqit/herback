@@ -31,6 +31,7 @@ def test_browser_uploads_are_allowed_from_any_portal_origin(monkeypatch):
     assert calls[0]["Bucket"] == "sunskriti"
     assert "PUT" in rule["AllowedMethods"]
     assert "https://bin.junction.monster" in rule["AllowedOrigins"]
+    assert "https://cart.junction.blog" in rule["AllowedOrigins"]
     assert "https://binter.vercel.app" in rule["AllowedOrigins"]
     assert "content-type" in rule["AllowedHeaders"]
     assert "Content-Type" in rule["AllowedHeaders"]
