@@ -260,7 +260,7 @@ def test_media_signs_are_one_key_each(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("R2_ACCOUNT_ID", "abc123")
     monkeypatch.setenv("R2_ACCESS_KEY_ID", "key")
     monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
-    monkeypatch.setenv("R2_BUCKET", "herb-media")
+    monkeypatch.setenv("R2_BUCKET", "scrap")
     monkeypatch.setenv("R2_PUBLIC_BASE_URL", "https://media.example")
     monkeypatch.setenv("HERB_API_KEY", "test-key")
     keys = []

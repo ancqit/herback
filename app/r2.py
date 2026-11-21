@@ -81,6 +81,10 @@ MAX_BYTES: dict[MediaKind, int] = {
     "video": 40 * 1024 * 1024,
 }
 
+# The live bucket. CORS is on this name. An old herb-media value is the same bucket renamed.
+BUCKET_NAME = "scrap"
+_RETIRED_BUCKETS = {"herb-media"}
+
 
 @dataclass(frozen=True)
 class R2Settings:
@@ -108,6 +112,19 @@ def _clean(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
+def bucket_name() -> str:
+    """The bucket photographs and clips are written to.
+
+    ``R2_BUCKET=scrap`` is the live name. A blank value, or the retired
+    ``herb-media`` name, is ``scrap`` so a presigned PUT hits the bucket
+    whose CORS rule is already saved.
+    """
+    name = _clean("R2_BUCKET")
+    if not name or name in _RETIRED_BUCKETS:
+        return BUCKET_NAME
+    return name
+
+
 def load_settings() -> R2Settings:
     account_id = _clean("R2_ACCOUNT_ID")
     endpoint = _clean("R2_ENDPOINT") or (
@@ -122,7 +139,7 @@ def load_settings() -> R2Settings:
         account_id=account_id,
         access_key_id=_clean("R2_ACCESS_KEY_ID"),
         secret_access_key=_clean("R2_SECRET_ACCESS_KEY"),
-        bucket=_clean("R2_BUCKET"),
+        bucket=bucket_name(),
         public_base_url=_clean("R2_PUBLIC_BASE_URL").rstrip("/"),
         endpoint=endpoint,
         sign_expires_seconds=expires,
