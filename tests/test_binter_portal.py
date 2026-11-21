@@ -209,6 +209,7 @@ def test_upload_keys_stay_under_binter_and_a_clip_rejects_an_image(monkeypatch: 
     body = photo.json()
     assert set(body) == {
         "upload_url",
+        "url",
         "cdn",
         "object_key",
         "content_type",
@@ -217,6 +218,7 @@ def test_upload_keys_stay_under_binter_and_a_clip_rejects_an_image(monkeypatch: 
         "max_bytes",
         "max_seconds",
     }
+    assert body["url"] == f"https://herback-1.onrender.com/files/{body['object_key']}"
     assert body["cdn"] == f"https://media.example/{body['object_key']}"
     assert KEY_RE["photo"].fullmatch(body["object_key"])
     assert body["object_key"].startswith("binter/")
@@ -304,11 +306,15 @@ def test_notifier_creates_a_collect_and_receiver_without_papers_cannot_accept(mo
     assert created["accepted_at"] is None
     assert created["completed_at"] is None
     assert set(created["photo"]) == {"url", "content_type", "filename"}
-    assert created["photo"]["url"].startswith("https://media.example/binter/photos/")
     assert "object_key" not in json.dumps(created)
     stored = bucket.forms["binter"]["requests"][0]["photo"]
-    assert stored["cdn"] == created["photo"]["url"]
+    assert created["photo"]["url"] == f"https://herback-1.onrender.com/files/{stored['object_key']}"
     assert stored["cdn"].startswith("https://media.example/binter/photos/")
+    bucket.objects[stored["object_key"]] = b"\xff\xd8\xff pile"
+    got = client.get("/files/" + stored["object_key"])
+    assert got.status_code == 200
+    assert got.headers["content-type"].startswith("image/jpeg")
+    assert got.content == b"\xff\xd8\xff pile"
 
     refused = client.post(f"/binter/requests/{created['id']}/accept", headers=_auth(RECEIVER, VEHICLE))
     assert refused.status_code == 400

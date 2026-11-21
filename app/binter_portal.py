@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Body, HTTPException, Request, status
 
 from . import forms, r2
+from .files import file_url, serveable
 
 router = APIRouter(prefix="/binter", tags=["binter"])
 
@@ -380,8 +381,9 @@ def _public_media(media: object) -> dict | None:
     key = media.get("object_key")
     if not isinstance(key, str) or not key:
         return None
+    played = file_url(key) if serveable(key) else forms.playback_url(media)
     return {
-        "url": forms.playback_url(media),
+        "url": played,
         "content_type": str(media.get("content_type") or ""),
         "filename": str(media.get("filename") or ""),
     }
@@ -501,6 +503,7 @@ def upload_url(request: Request, body: dict = Body(...)) -> dict:
         max_seconds = None
     return {
         "upload_url": upload,
+        "url": file_url(key),
         "cdn": r2.public_url(key),
         "object_key": key,
         "content_type": content_type,

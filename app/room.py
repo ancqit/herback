@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from .database import get_database, mongo_configured
+from .files import file_url, serveable
 
 router = APIRouter(tags=["room"])
 
@@ -62,14 +63,21 @@ def _require_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def stamp_cdn(value: Any) -> None:
-    """Copy a stored media URL onto `cdn` so playback does not fetch the object."""
+    """Point playback at the file this service reads from the bucket.
+
+    A portal object key is served from herback. Anything else keeps the URL
+    the client already stored.
+    """
     if isinstance(value, dict):
-        url = value.get("url")
-        if not isinstance(url, str) or not url.startswith("http"):
-            url = value.get("public_url")
         key = value.get("object_key") or value.get("objectKey")
-        if isinstance(url, str) and url.startswith("http") and isinstance(key, str) and key:
-            value["cdn"] = url
+        if isinstance(key, str) and serveable(key):
+            value["cdn"] = file_url(key)
+        else:
+            url = value.get("url")
+            if not isinstance(url, str) or not url.startswith("http"):
+                url = value.get("public_url")
+            if isinstance(url, str) and url.startswith("http") and isinstance(key, str) and key:
+                value["cdn"] = url
         for item in value.values():
             stamp_cdn(item)
     elif isinstance(value, list):
