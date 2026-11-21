@@ -21,7 +21,15 @@ Atlas side, once:
 2. Network Access: allow this service to reach the cluster. A Render web service has no fixed outbound address, so the entry that works is `0.0.0.0/0`.
 3. Connect → Drivers → Python, and copy the `mongodb+srv` string into `MONGODB_URL`.
 
-`GET /health` is the status the portals already call, and it is Render's health check. It stays up even when the URL is empty or the cluster refuses the connection. It reports `mongo_configured` and `mongo_host` (the cluster host only), and it pings the cluster the way junctionBack does. `mongo_ok` is true only when that ping answers. A missed ping, including a `mongodb+srv` host with no DNS record, leaves `mongo_ok` false, puts the exception class in `mongo_error`, and keeps HTTP 200 so Render does not restart the service. `GET /mongo` runs the same ping and returns `{"ok":true,"database":"herb","host":"..."}`. A failed ping there is 503 and the body does not include the URL. Form routes that cannot reach Mongo answer 503, not 500.
+`MONGODB_URL` is the Atlas string. Herback strips a matching pair of quotes around it, then opens one client. Scrap, binter, cart, and the room all use that client and the `herb` database.
+
+`GET /health` is Render's health check. It pings that same URL and stays HTTP 200 when the cluster is quiet, with `mongo_ok` false and the exception class in `mongo_error`. `mongo_host` is the host only.
+
+`GET /mongo` is the end-to-end check. It pings, writes a marker in `connection`, and reads `portal_forms` and `room_snapshots` — the collections a new app sits beside. A miss is 503 and the body does not include the URL.
+
+```json
+{"ok":true,"database":"herb","host":"YOUR_CLUSTER.mongodb.net","round_trip":true,"seen":1,"collections":["connection","portal_forms","room_snapshots"]}
+```
 
 Pictures and videos stay in the R2 bucket. The form that names them is a document in `portal_forms`, the same idea as junctionBack storing `cdn` on a product. A list reads that document. Playback uses the stored CDN URL, so opening a cart, a scrap card, or a collect does not fetch the object. The browser still PUTs the bytes to R2, and that PUT needs the bucket CORS rule plus a public read host in `R2_PUBLIC_BASE_URL`. An old `catalog.json` or `state.json` is copied into Mongo the first time the bucket answers, and after that the bucket file is left alone.
 

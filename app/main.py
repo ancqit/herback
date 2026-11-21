@@ -13,7 +13,7 @@ load_dotenv()
 from .binter_portal import router as binter_router
 from .cart_portal import router as cart_router
 from .cors_config import load_cors_origin_regex, load_cors_origins
-from .database import load_settings, mongo_configured, mongo_host, mongo_missing_env, mongo_probe, ping
+from .database import mongo_configured, mongo_host, mongo_missing_env, mongo_probe, prove_connection
 from .media import router as media_router
 from .r2 import bucket_cors, ensure_browser_cors, r2_configured, r2_missing_env
 from .room import router as room_router
@@ -97,19 +97,20 @@ def health() -> dict[str, str | bool | list[str]]:
 
 
 @app.get("/mongo")
-def mongo_check() -> dict[str, str | bool]:
-    """Confirm the cluster URL. Does not return the connection string."""
+def mongo_check() -> dict:
+    """Ping, write, and read the same database the portals use.
+
+    The body has the host and the collection names. It does not have the URL.
+    """
     if not mongo_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MONGODB_URL is not set",
         )
     try:
-        ping()
+        return prove_connection()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"MongoDB ping failed ({type(exc).__name__})",
+            detail=f"MongoDB is not answering ({type(exc).__name__})",
         ) from exc
-    settings = load_settings()
-    return {"ok": True, "database": settings.database, "host": mongo_host()}
