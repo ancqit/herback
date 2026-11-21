@@ -97,14 +97,21 @@ def test_creates_lists_and_deletes_a_scrap_in_the_bucket(monkeypatch: pytest.Mon
     scrap = created.json()["scrap"]
     assert scrap["portal"] == "2001"
     assert scrap["price"] == 18500
-    assert scrap["pictures"][0]["url"] == "https://media.example/2001/scraps/one.jpg"
-    assert scrap["pictures"][0]["cdn"] == "https://media.example/2001/scraps/one.jpg"
-    assert bucket.forms["scrap"]["scraps"][0]["pictures"][0]["cdn"] == scrap["pictures"][0]["cdn"]
+    played = "https://herback-1.onrender.com/files/2001/scraps/one.jpg"
+    assert scrap["pictures"][0]["url"] == played
+    assert scrap["pictures"][0]["cdn"] == played
+    assert bucket.forms["scrap"]["scraps"][0]["pictures"][0]["cdn"] == "https://media.example/2001/scraps/one.jpg"
     assert "2001/catalog.json" not in bucket.objects
 
+    bucket.objects["2001/scraps/one.jpg"] = b"\xff\xd8\xff bike"
     listed = client.get("/scrap/scraps")
     assert listed.status_code == 200
     assert listed.json()["scraps"][0]["type"] == "bikes"
+    assert listed.json()["scraps"][0]["pictures"][0]["cdn"] == played
+    got = client.get("/files/2001/scraps/one.jpg")
+    assert got.status_code == 200
+    assert got.headers["content-type"].startswith("image/jpeg")
+    assert got.content == b"\xff\xd8\xff bike"
     assert client.get("/scrap/types").json() == {"types": ["bikes"]}
 
     empty = client.post(

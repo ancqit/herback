@@ -14,6 +14,7 @@ from .binter_portal import router as binter_router
 from .cart_portal import router as cart_router
 from .cors_config import load_cors_origin_regex, load_cors_origins
 from .database import mongo_configured, mongo_host, mongo_missing_env, mongo_probe, prove_connection
+from .files import router as files_router
 from .media import router as media_router
 from .r2 import bucket_cors, bucket_name, ensure_browser_cors, r2_configured, r2_missing_env
 from .room import router as room_router
@@ -51,6 +52,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(files_router)
+app.include_router(files_router, prefix="/api")
 app.include_router(media_router)
 app.include_router(media_router, prefix="/api")
 app.include_router(scrap_router)

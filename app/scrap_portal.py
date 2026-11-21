@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, HTTPException, Request, Response, status
 
 from . import forms, r2
+from .files import file_url, serveable
 
 router = APIRouter(prefix="/scrap", tags=["scrap"])
 
@@ -73,6 +74,25 @@ def _public_key(raw: object) -> str:
     if key == CATALOG_KEY:
         raise HTTPException(status_code=400, detail="invalid key")
     return key
+
+
+def _present_file(item: dict) -> dict:
+    shown = dict(item)
+    key = shown.get("object_key")
+    if isinstance(key, str) and serveable(key):
+        played = file_url(key)
+        shown["url"] = played
+        shown["cdn"] = played
+    return shown
+
+
+def _present_scrap(scrap: dict) -> dict:
+    shown = dict(scrap)
+    for group in ("pictures", "documents"):
+        rows = scrap.get(group)
+        if isinstance(rows, list):
+            shown[group] = [_present_file(row) if isinstance(row, dict) else row for row in rows]
+    return shown
 
 
 def _load() -> list[dict]:
@@ -138,7 +158,7 @@ def types() -> dict:
 
 @router.get("/scraps")
 def list_scraps() -> dict:
-    return {"scraps": _load()}
+    return {"scraps": [_present_scrap(scrap) for scrap in _load()]}
 
 
 @router.post("/get-upload-url")
@@ -203,7 +223,7 @@ def create_scrap(request: Request, body: dict = Body(...)) -> dict:
     scraps = _load()
     scraps.insert(0, scrap)
     _save(scraps)
-    return {"scrap": scrap}
+    return {"scrap": _present_scrap(scrap)}
 
 
 @router.delete("/scraps/{scrap_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
