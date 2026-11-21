@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 
 from pymongo import MongoClient
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
 
 _UNSET_URL = "mongodb://invalid:27017"
 
@@ -98,25 +97,37 @@ def ping() -> None:
     get_database().command("ping")
 
 
-def mongo_ok() -> bool:
-    """True when the cluster answers ping. A miss stays false and does not raise.
+def mongo_probe() -> tuple[bool, str]:
+    """Ping the cluster. Returns `(ok, error name)`.
 
-    The status probe uses a short wait so a quiet cluster does not hold Render's
-    liveness check. The pooled client keeps the longer timeout for real reads.
+    A bad `mongodb+srv` host raises `ConfigurationError` while the client is
+    constructed, before `ping` runs. That used to escape `/health` as a 500.
+    The error name is the exception class only. The URL never leaves this function.
     """
     if not mongo_configured():
-        return False
+        return False, ""
     settings = load_settings()
-    client = MongoClient(
-        settings.url,
-        serverSelectionTimeoutMS=2_000,
-        connectTimeoutMS=2_000,
-        retryWrites=True,
-    )
+    client = None
     try:
+        client = MongoClient(
+            settings.url,
+            serverSelectionTimeoutMS=2_000,
+            connectTimeoutMS=2_000,
+            retryWrites=True,
+        )
         client[settings.database].command("ping")
-        return True
-    except PyMongoError:
-        return False
+        return True, ""
+    except Exception as exc:
+        return False, type(exc).__name__
     finally:
-        client.close()
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
+def mongo_ok() -> bool:
+    """True when the cluster answers ping. A miss stays false and does not raise."""
+    ok, _error = mongo_probe()
+    return ok

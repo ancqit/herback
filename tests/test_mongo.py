@@ -38,6 +38,7 @@ def test_health_pings_mongo_and_hides_the_url(monkeypatch: pytest.MonkeyPatch):
     assert body["mongo_missing"] == []
     assert body["mongo_host"] == "cluster0.abc123.mongodb.net"
     assert body["mongo_ok"] is True
+    assert body["mongo_error"] == ""
     assert seen["command"] == "ping"
     assert seen["database"] == "herb"
     assert seen["timeout"] == 2_000
@@ -70,9 +71,37 @@ def test_health_stays_up_when_the_ping_misses(monkeypatch: pytest.MonkeyPatch):
     assert response.status_code == 200
     body = response.json()
     assert body["mongo_ok"] is False
+    assert body["mongo_error"] == "ServerSelectionTimeoutError"
     assert body["mongo_host"] == "cluster0.abc123.mongodb.net"
     assert "p%40ssword" not in response.text
     assert "herback_user" not in response.text
+
+
+def test_health_stays_up_when_the_srv_host_does_not_exist(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MONGODB_URL", CLUSTER_URL)
+    from pymongo.errors import ConfigurationError
+
+    class BrokenClient:
+        def __init__(self, *_args, **_kwargs):
+            raise ConfigurationError(
+                "The DNS query name does not exist: _mongodb._tcp.cluster0.abc123.mongodb.net."
+            )
+
+    monkeypatch.setattr("app.database.MongoClient", BrokenClient)
+    from app.main import app
+
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mongo_ok"] is False
+    assert body["mongo_error"] == "ConfigurationError"
+    assert "p%40ssword" not in response.text
+    assert "herback_user" not in response.text
+    assert "_mongodb._tcp" not in response.text
+
+    scraps = TestClient(app).get("/scrap/scraps")
+    assert scraps.status_code == 503
+    assert scraps.json()["detail"] == "MongoDB is not answering (ConfigurationError)"
 
 
 def test_mongo_ping_requires_a_url(monkeypatch: pytest.MonkeyPatch):
