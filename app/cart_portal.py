@@ -335,6 +335,13 @@ def _allow(request: Request, *roles: str) -> tuple[str, str | None]:
     return role, extra
 
 
+def _stock(request: Request, cart_id: str) -> None:
+    """The loader, the entity, or this cart's own token may put things on it."""
+    role, own_id = _allow(request, "loader", "entity", "cart")
+    if role == "cart" and own_id != cart_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=WRONG_ROLE)
+
+
 def _find_cart(state: dict, cart_id: str) -> dict:
     for cart in state["carts"]:
         if cart.get("id") == cart_id:
@@ -536,7 +543,7 @@ def login(body: dict = Body(...)) -> dict:
 
 @router.post("/upload-url")
 def upload_url(request: Request, body: dict = Body(...)) -> dict:
-    _allow(request, "loader")
+    _allow(request, "loader", "entity", "cart")
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Expected JSON object")
     content_type = _content_type(body.get("contentType") or body.get("content_type") or "")
@@ -647,7 +654,7 @@ def remove_stop(cart_id: str, stop_id: str, request: Request) -> Response:
 
 @router.post("/carts/{cart_id}/items", status_code=status.HTTP_201_CREATED)
 def add_item(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
-    _allow(request, "loader")
+    _stock(request, cart_id)
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Expected JSON object")
     kind = _kind(body.get("kind"))
@@ -680,7 +687,7 @@ def add_item(cart_id: str, request: Request, body: dict = Body(...)) -> dict:
 
 @router.delete("/carts/{cart_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_item(cart_id: str, item_id: str, request: Request) -> Response:
-    _allow(request, "loader")
+    _stock(request, cart_id)
 
     def write(state: dict) -> None:
         cart = _find_cart(state, cart_id)

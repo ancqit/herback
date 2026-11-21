@@ -132,7 +132,13 @@ def test_photo_keys_stay_under_cart_photos(monkeypatch: pytest.MonkeyPatch):
     assert "2001/" not in body["object_key"]
     assert "binter/" not in body["object_key"]
     assert client.post("/cart/upload-url", json={"contentType": "image/gif"}, headers=_auth(LOADER)).status_code == 400
-    assert client.post("/cart/upload-url", json={"contentType": "image/jpeg"}, headers=_auth(ENTITY)).status_code == 403
+    entity_photo = client.post(
+        "/cart/upload-url",
+        json={"contentType": "image/jpeg", "filename": "spinach.jpg"},
+        headers=_auth(ENTITY),
+    )
+    assert entity_photo.status_code == 200
+    assert entity_photo.json()["object_key"].startswith("cart/photos/")
 
 
 def test_entity_sees_loaded_carts_and_the_driver_gets_a_token(monkeypatch: pytest.MonkeyPatch):
@@ -276,6 +282,42 @@ def test_rejects_foreign_photo_keys_and_a_duplicate_cart_token(monkeypatch: pyte
         json={"token": "no", "name": "Other", "stops": [_stop()]},
         headers=_auth(LOADER),
     ).status_code == 400
+
+
+def test_the_selected_cart_adds_a_vegetable_and_another_thing(monkeypatch: pytest.MonkeyPatch):
+    _install(monkeypatch)
+    cart = _create("CartTok9")
+    other = _create("CartTok8")
+    photo = _photo()
+    added = client.post(
+        f"/cart/carts/{cart['id']}/items",
+        json={"kind": "veggie", "name": "Spinach", "price": 40, "unit": "bunch", "photo": photo},
+        headers=_auth("CartTok9"),
+    )
+    assert added.status_code == 201
+    item = added.json()["cart"]["items"][0]
+    assert item["kind"] == "veggie"
+    assert item["name"] == "Spinach"
+    honey = client.post(
+        f"/cart/carts/{cart['id']}/items",
+        json={"kind": "other", "name": "Honey", "price": 120, "unit": "piece", "photo": photo},
+        headers=_auth(ENTITY),
+    )
+    assert honey.status_code == 201
+    assert honey.json()["cart"]["items"][1]["kind"] == "other"
+    blocked = client.post(
+        f"/cart/carts/{other['id']}/items",
+        json={"kind": "veggie", "name": "Mint", "price": 10, "unit": "bunch", "photo": photo},
+        headers=_auth("CartTok9"),
+    )
+    assert blocked.status_code == 403
+    removed = client.delete(
+        f"/cart/carts/{cart['id']}/items/{item['id']}",
+        headers=_auth("CartTok9"),
+    )
+    assert removed.status_code == 204
+    left = client.get(f"/cart/carts/{cart['id']}", headers=_auth(ENTITY))
+    assert [row["name"] for row in left.json()["cart"]["items"]] == ["Honey"]
 
 
 def test_a_cart_token_cannot_order_another_cart(monkeypatch: pytest.MonkeyPatch):
