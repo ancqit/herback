@@ -3,15 +3,17 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError
 
 load_dotenv()
 
 from .binter_portal import router as binter_router
 from .cart_portal import router as cart_router
 from .cors_config import load_cors_origin_regex, load_cors_origins
-from .database import load_settings, mongo_configured, mongo_host, mongo_missing_env, mongo_ok, ping
+from .database import mongo_configured, mongo_host, mongo_missing_env, mongo_probe, prove_connection
 from .media import router as media_router
 from .r2 import bucket_cors, ensure_browser_cors, r2_configured, r2_missing_env
 from .room import router as room_router
@@ -60,9 +62,19 @@ app.include_router(cart_router, prefix="/api")
 app.include_router(room_router, prefix="/api")
 
 
+@app.exception_handler(PyMongoError)
+async def mongo_unavailable(_request: Request, exc: PyMongoError) -> JSONResponse:
+    """A dead cluster is a 503 on the form routes, not an internal server error."""
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": f"MongoDB is not answering ({type(exc).__name__})"},
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str | bool | list[str]]:
     """Liveness for Render. Reports which secret names are missing, never values."""
+    mongo_up, mongo_error = mongo_probe()
     return {
         "status": "ok",
         "service": "herback",
@@ -79,24 +91,26 @@ def health() -> dict[str, str | bool | list[str]]:
         "mongo_configured": mongo_configured(),
         "mongo_missing": mongo_missing_env(),
         "mongo_host": mongo_host(),
-        "mongo_ok": mongo_ok(),
+        "mongo_ok": mongo_up,
+        "mongo_error": mongo_error,
     }
 
 
 @app.get("/mongo")
-def mongo_check() -> dict[str, str | bool]:
-    """Confirm the cluster URL. Does not return the connection string."""
+def mongo_check() -> dict:
+    """Ping, write, and read the same database the portals use.
+
+    The body has the host and the collection names. It does not have the URL.
+    """
     if not mongo_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MONGODB_URL is not set",
         )
     try:
-        ping()
+        return prove_connection()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MongoDB ping failed",
+            detail=f"MongoDB is not answering ({type(exc).__name__})",
         ) from exc
-    settings = load_settings()
-    return {"ok": True, "database": settings.database, "host": mongo_host()}
