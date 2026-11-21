@@ -105,7 +105,7 @@ def test_presign_put_is_local(monkeypatch: pytest.MonkeyPatch):
     body = response.json()
     assert body["object_key"].startswith("herb/images/")
     assert body["object_key"].endswith(".jpg")
-    assert body["public_url"] == f"https://media.example/{body['object_key']}"
+    assert body["public_url"] == f"https://herback-1.onrender.com/files/{body['object_key']}"
     assert body["cdn"] == body["public_url"]
     assert body["upload_method"] == "PUT"
     assert body["content_type"] == "image/jpeg"
@@ -237,7 +237,7 @@ def test_server_upload_puts_bytes(monkeypatch: pytest.MonkeyPatch):
     assert response.status_code == 201
     body = response.json()
     assert body["object_key"].startswith("herb/documents/")
-    assert body["public_url"].endswith(body["object_key"])
+    assert body["public_url"] == f"https://herback-1.onrender.com/files/{body['object_key']}"
     assert stored["Bucket"] == "scrap"
     assert stored["Key"] == body["object_key"]
     assert stored["Body"] == b"%PDF-1.4"

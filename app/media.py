@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
+from .files import file_url
 from .r2 import (
     MAX_BYTES,
     MediaKind,
@@ -100,6 +101,9 @@ def sign_upload(payload: SignRequest, _: None = Depends(require_api_key)) -> Sig
         filename=payload.filename,
         place=payload.place,
     )
+    played = file_url(signed["object_key"])
+    signed["public_url"] = played
+    signed["cdn"] = played
     return SignResponse(**signed)
 
 
@@ -111,7 +115,7 @@ async def upload_object(
     place: MediaPlace | None = Form(default=None),
 ) -> StoredObject:
     """Server-side PUT for small files. Prefer /media/sign so Render does not proxy the bytes."""
-    settings = require_r2()
+    require_r2()
     content_type = normalize_content_type(kind, file.content_type or "", file.filename or "")
     limit = MAX_BYTES[kind]
     chunks: list[bytes] = []
@@ -135,7 +139,7 @@ async def upload_object(
     return StoredObject(
         kind=kind,
         object_key=object_key,
-        public_url=f"{settings.public_base_url}/{object_key}",
+        public_url=file_url(object_key),
         content_type=content_type,
         size_bytes=len(body),
     )
