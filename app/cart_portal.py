@@ -64,6 +64,7 @@ DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 UNITS = ("kg", "bunch", "piece")
 KINDS = ("veggie", "other")
 PHOTO_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+_PHOTO_MEDIA = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
 _ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg"}
 _HEX = r"[a-f0-9]{32}"
 _PHOTO_KEY = re.compile(rf"^cart/photos/{_HEX}\.(jpg|png|webp)$")
@@ -356,9 +357,29 @@ def _find_order(state: dict, order_id: str) -> dict:
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NO_DRIVER)
 
 
+def _photo_host() -> str:
+    raw = (os.getenv("HERBACK_PUBLIC_URL") or "https://herback-1.onrender.com").strip().rstrip("/")
+    if raw.startswith("http://"):
+        raw = "https://" + raw[len("http://") :]
+    return raw
+
+
+def _display_photo_url(photo: dict) -> str:
+    """The address the cart page puts on the image.
+
+    The file stays in the scrap bucket. The public bucket host is not what the
+    page loads: that host was still the old one, so the picture drew broken.
+    This address is read back from the bucket with an image content type.
+    """
+    key = photo.get("object_key")
+    if isinstance(key, str) and _PHOTO_KEY.fullmatch(key):
+        return f"{_photo_host()}/cart/photos/{key.rsplit('/', 1)[-1]}"
+    return forms.playback_url(photo)
+
+
 def _public_photo(photo: dict) -> dict:
     return {
-        "url": forms.playback_url(photo),
+        "url": _display_photo_url(photo),
         "content_type": str(photo.get("content_type") or ""),
         "filename": str(photo.get("filename") or ""),
     }
@@ -539,6 +560,26 @@ def login(body: dict = Body(...)) -> dict:
         return payload
 
     return _with_state(read, save=False)
+
+
+@router.get("/photos/{name}")
+def photograph(name: str) -> Response:
+    """Return one cart photograph. The name is the object file, not a path."""
+    key = f"cart/photos/{name}"
+    if not _PHOTO_KEY.fullmatch(key):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="That photograph is not in the bucket.")
+    body = r2.read_object(key)
+    if not body:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="That photograph is not in the bucket.")
+    media = _PHOTO_MEDIA[key.rsplit(".", 1)[-1]]
+    return Response(
+        content=body,
+        media_type=media,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Content-Disposition": "inline",
+        },
+    )
 
 
 @router.post("/upload-url")
