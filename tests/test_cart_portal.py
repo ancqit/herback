@@ -116,6 +116,34 @@ def test_health_names_the_cart_doors_without_the_numbers(monkeypatch: pytest.Mon
     assert client.get("/health").json()["cart_loader_configured"] is False
 
 
+def test_a_cart_photograph_is_an_image(monkeypatch: pytest.MonkeyPatch):
+    bucket = _install(monkeypatch)
+    cart = _create()
+    key = "cart/photos/" + "e" * 32 + ".png"
+    bucket.objects[key] = b"\x89PNG spinach"
+    added = client.post(
+        f"/cart/carts/{cart['id']}/items",
+        json={
+            "kind": "veggie",
+            "name": "Spinach",
+            "price": 40,
+            "unit": "bunch",
+            "photo": {"object_key": key, "content_type": "image/png", "filename": "spinach.png"},
+        },
+        headers=_auth(LOADER),
+    )
+    assert added.status_code == 201
+    name = key.rsplit("/", 1)[-1]
+    assert added.json()["cart"]["items"][0]["photo"]["url"].endswith(f"/cart/photos/{name}")
+    got = client.get(f"/cart/photos/{name}")
+    assert got.status_code == 200
+    assert got.headers["content-type"].startswith("image/png")
+    assert got.content == b"\x89PNG spinach"
+    assert got.headers["content-disposition"] == "inline"
+    assert client.get("/cart/photos/" + "f" * 32 + ".jpg").status_code == 404
+    assert client.get("/cart/photos/not-a-photo.jpg").status_code == 404
+
+
 def test_photo_keys_stay_under_cart_photos(monkeypatch: pytest.MonkeyPatch):
     _install(monkeypatch)
     signed = client.post(
@@ -174,10 +202,11 @@ def test_entity_sees_loaded_carts_and_the_driver_gets_a_token(monkeypatch: pytes
     assert added.status_code == 201
     veggie = added.json()["cart"]["items"][0]
     assert veggie["kind"] == "veggie"
-    assert veggie["photo"]["url"] == f"https://media.example/{signed['object_key']}"
+    photo_name = signed["object_key"].rsplit("/", 1)[-1]
+    assert veggie["photo"]["url"] == f"https://herback-1.onrender.com/cart/photos/{photo_name}"
     assert "object_key" not in added.text
     stored = bucket.forms["cart"]["carts"][0]["items"][0]["photo"]
-    assert stored["cdn"] == veggie["photo"]["url"]
+    assert stored["cdn"] == f"https://media.example/{signed['object_key']}"
     assert "cart/state.json" not in bucket.objects
     other = client.post(
         f"/cart/carts/{cart['id']}/items",
